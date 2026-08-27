@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  Users, MessageCircle, UserPlus, Sparkles, TrendingUp, 
+  Users, MessageCircle, UserPlus, Sparkles, 
   Check, X, Zap, ShieldCheck
 } from 'lucide-react';
 import { useSocial } from '../../context/SocialContext';
@@ -21,13 +21,6 @@ export const SidebarRight: React.FC = () => {
   const otherUsers = users.filter(u => u.id !== currentUser.id);
   const onlineUsers = otherUsers.filter(u => u.isOnline);
   const pendingRequests = friendRequests.filter(r => r.toUserId === currentUser.id && r.status === 'pending');
-
-  const trendingTopics = [
-    { tag: '#GenerativeDesign', posts: '4.8k posts', category: 'Design & Tech' },
-    { tag: '#AlpineAscents', posts: '2.1k posts', category: 'Outdoors' },
-    { tag: '#AnalogSynthesizer', posts: '1.9k posts', category: 'Music' },
-    { tag: '#WebEngineering', posts: '5.2k posts', category: 'Technology' }
-  ];
 
   return (
     <aside className="w-72 flex-shrink-0 hidden xl:block space-y-4">
@@ -138,24 +131,6 @@ export const SidebarRight: React.FC = () => {
               </button>
             );
           })}
-        </div>
-      </div>
-
-      {/* Trending Topics */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-xs space-y-3">
-        <div className="flex items-center gap-1.5 px-0.5">
-          <TrendingUp className="w-3.5 h-3.5 text-[#FF3D71]" />
-          <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Trending in Sphere</span>
-        </div>
-
-        <div className="space-y-2.5">
-          {trendingTopics.map(topic => (
-            <div key={topic.tag} className="hover:bg-[#F0F4F8] p-2 rounded-xl transition-colors cursor-pointer">
-              <div className="text-[10px] text-slate-400 font-semibold">{topic.category}</div>
-              <div className="text-xs font-bold text-slate-800 hover:text-[#FF3D71]">{topic.tag}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">{topic.posts}</div>
-            </div>
-          ))}
         </div>
       </div>
 
