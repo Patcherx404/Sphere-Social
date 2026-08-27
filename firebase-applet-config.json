@@ -1,12 +1,12 @@
 {
-  "projectId": "manifest-avatar-fk7s0",
-  "appId": "1:269445312868:web:4936f5cd0f5f8233fbca71",
-  "apiKey": "AIzaSyBA4gamgoG0d9rUgurIW9gg9zCmx4mc8iI",
-  "authDomain": "manifest-avatar-fk7s0.firebaseapp.com",
+  "projectId": "spear-9ff2a",
+  "appId": "1:245954348034:web:9090fa30d501465b0d931b",
+  "apiKey": "AIzaSyC3haQxqPiUE7rYwWgyfFYraub_DRYEKbw",
+  "authDomain": "spear-9ff2a.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-spheresocialchat-1bbbc8da-9e90-49a5-b968-152d25772068",
-  "storageBucket": "manifest-avatar-fk7s0.firebasestorage.app",
-  "messagingSenderId": "269445312868",
+  "storageBucket": "spear-9ff2a.firebasestorage.app",
+  "messagingSenderId": "245954348034",
   "measurementId": "",
-  "oAuthClientId": "269445312868-01tv16bvrjsovqee7h82oc824790nu5p.apps.googleusercontent.com",
+  "oAuthClientId": "245954348034-iar56ur950e6gh4uc4tdrv3iaruh4g82.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseOptions } from 'firebase/app';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -19,7 +19,19 @@ import {
   collection, 
   onSnapshot 
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import defaultConfig from '../../firebase-applet-config.json';
+
+// Support both static json config and Vercel/Vite environment variables
+const env = (import.meta as any).env || {};
+const firebaseConfig: FirebaseOptions & { firestoreDatabaseId?: string } = {
+  apiKey: env.VITE_FIREBASE_API_KEY || defaultConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || defaultConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || defaultConfig.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || defaultConfig.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || defaultConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || defaultConfig.appId,
+  firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || defaultConfig.firestoreDatabaseId
+};
 
 // Initialize Firebase App singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -36,6 +48,12 @@ export const db = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
 
+export const isVercelHost = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host.includes('vercel.app') || host.includes('vercel.dev') || host.includes('now.sh');
+};
+
 export { 
   signInWithPopup, 
   signInWithRedirect,
@@ -51,3 +69,4 @@ export {
   onSnapshot
 };
 export type { FirebaseUser };
+
