@@ -13,6 +13,7 @@ interface FloatingChatWindowProps {
 export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversationId }) => {
   const { 
     currentUser, 
+    users,
     conversations, 
     messages, 
     sendMessage, 
@@ -38,9 +39,11 @@ export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversa
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMinimized = minimizedChats[conversationId];
 
-  const otherUser = conversation?.isGroup 
+  const otherUserRaw = conversation?.isGroup 
     ? null 
-    : conversation?.participants.find(p => p.id !== currentUser.id) || conversation?.participants[0];
+    : conversation?.participants.find(p => p.id !== currentUser?.id) || conversation?.participants[0];
+
+  const otherUser = otherUserRaw ? (users.find(u => u.id === otherUserRaw.id) || otherUserRaw) : null;
 
   const title = conversation?.isGroup ? conversation.name : otherUser?.name || 'Chat';
   const avatar = conversation?.isGroup ? conversation.avatar : otherUser?.avatar;

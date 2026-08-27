@@ -44,9 +44,14 @@ export const FullMessenger: React.FC = () => {
   const activeConversation = conversations.find(c => c.id === activeId);
   const currentMessages = activeId ? messages[activeId] || [] : [];
 
-  const otherUser = activeConversation?.isGroup 
+  const getResolvedParticipant = (p: User) => {
+    return users.find(u => u.id === p.id) || p;
+  };
+
+  const otherUserRaw = activeConversation?.isGroup 
     ? null 
-    : activeConversation?.participants.find(p => p.id !== currentUser.id) || activeConversation?.participants[0];
+    : activeConversation?.participants.find(p => p.id !== currentUser?.id) || activeConversation?.participants[0];
+  const otherUser = otherUserRaw ? getResolvedParticipant(otherUserRaw) : null;
 
   const title = activeConversation?.isGroup ? activeConversation.name : otherUser?.name || 'Messenger';
   const avatar = activeConversation?.isGroup ? activeConversation.avatar : otherUser?.avatar;
@@ -68,13 +73,18 @@ export const FullMessenger: React.FC = () => {
   }, [isRecordingVoice]);
 
   const filteredConversations = conversations.filter(c => {
+    // Only show conversations that the current user belongs to (or all if not yet assigned)
+    if (currentUser && c.participantIds && c.participantIds.length > 0 && !c.participantIds.includes(currentUser.id)) {
+      return false;
+    }
     if (!searchFilter.trim()) return true;
     const searchLower = searchFilter.toLowerCase();
     if (c.isGroup) {
       return c.name?.toLowerCase().includes(searchLower);
     }
-    const other = c.participants.find(p => p.id !== currentUser.id);
-    return other?.name.toLowerCase().includes(searchLower) || other?.handle.toLowerCase().includes(searchLower);
+    const other = c.participants.find(p => p.id !== currentUser?.id);
+    const resolvedOther = other ? getResolvedParticipant(other) : null;
+    return resolvedOther?.name.toLowerCase().includes(searchLower) || resolvedOther?.handle.toLowerCase().includes(searchLower);
   });
 
   const handleSendMessage = (e?: React.FormEvent) => {

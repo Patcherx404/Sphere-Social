@@ -19,7 +19,8 @@ import {
   setDoc, 
   getDoc,
   collection,
-  onSnapshot
+  onSnapshot,
+  deleteDoc
 } from '../lib/firebase';
 
 interface SocialContextType {
@@ -105,13 +106,13 @@ interface SocialContextType {
 const SocialContext = createContext<SocialContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  CURRENT_USER_ID: 'sphere_real_current_user_v4',
-  USERS: 'sphere_real_users_v4',
-  POSTS: 'sphere_real_posts_v4',
-  CONVERSATIONS: 'sphere_real_conversations_v4',
-  MESSAGES: 'sphere_real_messages_v4',
-  NOTIFICATIONS: 'sphere_real_notifications_v4',
-  FRIEND_REQUESTS: 'sphere_real_friend_requests_v4'
+  CURRENT_USER_ID: 'sphere_real_current_user_v5',
+  USERS: 'sphere_real_users_v5',
+  POSTS: 'sphere_real_posts_v5',
+  CONVERSATIONS: 'sphere_real_conversations_v5',
+  MESSAGES: 'sphere_real_messages_v5',
+  NOTIFICATIONS: 'sphere_real_notifications_v5',
+  FRIEND_REQUESTS: 'sphere_real_friend_requests_v5'
 };
 
 export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -208,7 +209,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [activeCall, setActiveCall] = useState<{ conversationId: string; user?: User; isGroup?: boolean; isVideo?: boolean } | null>(null);
 
-  // Real-time Firestore users listener to guarantee all real created users are searchable and reachable
+  // 1. Real-time Firestore USERS listener
   useEffect(() => {
     try {
       const usersColRef = collection(db, 'users');
@@ -234,6 +235,161 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return () => unsubscribe();
     } catch (e) {
       console.warn('Firestore users listener initialization:', e);
+    }
+  }, []);
+
+  // 2. Real-time Firestore CONVERSATIONS listener
+  useEffect(() => {
+    try {
+      const convColRef = collection(db, 'conversations');
+      const unsubscribe = onSnapshot(convColRef, (snapshot) => {
+        const firestoreConvs: Conversation[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as Conversation;
+          if (data && data.id) {
+            firestoreConvs.push(data);
+          }
+        });
+        if (firestoreConvs.length > 0) {
+          setConversations(prev => {
+            const map = new Map<string, Conversation>();
+            prev.forEach(c => map.set(c.id, c));
+            firestoreConvs.forEach(c => map.set(c.id, { ...(map.get(c.id) || {}), ...c }));
+            return Array.from(map.values()).sort((a: any, b: any) => {
+              const tA = a.timestamp || 0;
+              const tB = b.timestamp || 0;
+              return tB - tA;
+            });
+          });
+        }
+      }, (error) => {
+        console.warn('Firestore conv sync note:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore conv listener initialization:', e);
+    }
+  }, []);
+
+  // 3. Real-time Firestore MESSAGES listener
+  useEffect(() => {
+    try {
+      const msgColRef = collection(db, 'messages');
+      const unsubscribe = onSnapshot(msgColRef, (snapshot) => {
+        const newMsgMap: Record<string, ChatMessage[]> = {};
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as ChatMessage & { timestamp?: number };
+          if (data && data.id && data.conversationId) {
+            if (!newMsgMap[data.conversationId]) {
+              newMsgMap[data.conversationId] = [];
+            }
+            newMsgMap[data.conversationId].push(data);
+          }
+        });
+
+        setMessages(prev => {
+          const merged: Record<string, ChatMessage[]> = { ...prev };
+          Object.keys(newMsgMap).forEach(convId => {
+            const existing = prev[convId] || [];
+            const map = new Map<string, ChatMessage>();
+            existing.forEach(m => map.set(m.id, m));
+            newMsgMap[convId].forEach(m => map.set(m.id, m));
+            const list = Array.from(map.values());
+            list.sort((a: any, b: any) => {
+              const tA = a.timestamp || 0;
+              const tB = b.timestamp || 0;
+              return tA - tB;
+            });
+            merged[convId] = list;
+          });
+          return merged;
+        });
+      }, (error) => {
+        console.warn('Firestore messages sync note:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore messages listener initialization:', e);
+    }
+  }, []);
+
+  // 4. Real-time Firestore POSTS listener
+  useEffect(() => {
+    try {
+      const postsColRef = collection(db, 'posts');
+      const unsubscribe = onSnapshot(postsColRef, (snapshot) => {
+        const firestorePosts: Post[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as Post;
+          if (data && data.id) {
+            firestorePosts.push(data);
+          }
+        });
+        if (firestorePosts.length > 0) {
+          setPosts(prev => {
+            const map = new Map<string, Post>();
+            prev.forEach(p => map.set(p.id, p));
+            firestorePosts.forEach(p => map.set(p.id, { ...(map.get(p.id) || {}), ...p }));
+            return Array.from(map.values()).sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+          });
+        }
+      }, (error) => {
+        console.warn('Firestore posts sync note:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore posts listener initialization:', e);
+    }
+  }, []);
+
+  // 5. Real-time Firestore FRIEND REQUESTS listener
+  useEffect(() => {
+    try {
+      const frColRef = collection(db, 'friendRequests');
+      const unsubscribe = onSnapshot(frColRef, (snapshot) => {
+        const reqList: FriendRequest[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as FriendRequest;
+          if (data && data.id) {
+            reqList.push(data);
+          }
+        });
+        setFriendRequests(reqList);
+      }, (error) => {
+        console.warn('Firestore friend requests sync note:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore friend requests listener initialization:', e);
+    }
+  }, []);
+
+  // 6. Real-time Firestore NOTIFICATIONS listener
+  useEffect(() => {
+    try {
+      const notifColRef = collection(db, 'notifications');
+      const unsubscribe = onSnapshot(notifColRef, (snapshot) => {
+        const notifList: AppNotification[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as AppNotification & { toUserId?: string; timestamp?: number };
+          if (data && data.id) {
+            notifList.push(data);
+          }
+        });
+        if (notifList.length > 0) {
+          setNotifications(prev => {
+            const map = new Map<string, AppNotification>();
+            prev.forEach(n => map.set(n.id, n));
+            notifList.forEach(n => map.set(n.id, { ...(map.get(n.id) || {}), ...n }));
+            return Array.from(map.values()).sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+          });
+        }
+      }, (error) => {
+        console.warn('Firestore notifications sync note:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore notifications listener initialization:', e);
     }
   }, []);
 
@@ -383,7 +539,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.warn('Firebase Google Sign-In error:', err);
       let errorMsg = err.message || 'Google sign-in could not be completed.';
       if (err.code === 'auth/popup-blocked') {
-        errorMsg = 'Popup was blocked by your browser/iframe. You can click Quick Sign-In with projectile.afk@gmail.com below.';
+        errorMsg = 'Popup was blocked by your browser/iframe.';
       } else if (err.code === 'auth/popup-closed-by-user') {
         errorMsg = 'Sign-in popup was closed before completing.';
       } else if (err.code === 'auth/cancelled-popup-request') {
@@ -396,7 +552,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const registerUser = (data: { 
     name: string; 
     handle: string; 
-    email?: string;
+    email?: string; 
     password: string; 
     avatar?: string; 
     bio?: string;
@@ -570,21 +726,36 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // --- POST OPERATIONS ---
-  const addPost = (postData: Omit<Post, 'id' | 'createdAt' | 'reactions' | 'comments' | 'sharesCount'>) => {
+  const addPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'reactions' | 'comments' | 'sharesCount'>) => {
     if (!currentUser) return;
-    const newPost: Post = {
+    const postId = `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const newPost: Post & { timestamp: number } = {
       ...postData,
-      id: `post-${Date.now()}`,
+      id: postId,
+      author: currentUser,
       createdAt: 'Just now',
       reactions: { like: 0, love: 0, care: 0, haha: 0, wow: 0, sad: 0, fire: 0 },
       comments: [],
-      sharesCount: 0
+      sharesCount: 0,
+      timestamp: Date.now()
     };
+    
     setPosts(prev => [newPost, ...prev]);
+
+    try {
+      const cleanPost = Object.fromEntries(
+        Object.entries(newPost).filter(([_, v]) => v !== undefined)
+      );
+      await setDoc(doc(db, 'posts', postId), cleanPost);
+    } catch (e) {
+      console.warn('Firestore post save:', e);
+    }
   };
 
-  const reactToPost = (postId: string, reaction: ReactionType) => {
+  const reactToPost = async (postId: string, reaction: ReactionType) => {
     if (!currentUser) return;
+    let targetPost: Post | undefined;
+
     setPosts(prev => prev.map(post => {
       if (post.id !== postId) return post;
       const currentReaction = post.userReaction;
@@ -593,18 +764,30 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (currentReaction === reaction) {
         // Untoggle
         updatedReactions[reaction] = Math.max(0, updatedReactions[reaction] - 1);
-        return { ...post, reactions: updatedReactions, userReaction: undefined };
+        targetPost = { ...post, reactions: updatedReactions, userReaction: undefined };
       } else {
         if (currentReaction) {
           updatedReactions[currentReaction] = Math.max(0, updatedReactions[currentReaction] - 1);
         }
         updatedReactions[reaction] = (updatedReactions[reaction] || 0) + 1;
-        return { ...post, reactions: updatedReactions, userReaction: reaction };
+        targetPost = { ...post, reactions: updatedReactions, userReaction: reaction };
       }
+      return targetPost;
     }));
+
+    if (targetPost) {
+      try {
+        const cleanPost = Object.fromEntries(
+          Object.entries(targetPost).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'posts', postId), cleanPost, { merge: true });
+      } catch (e) {
+        console.warn('Firestore react save:', e);
+      }
+    }
   };
 
-  const addComment = (postId: string, content: string) => {
+  const addComment = async (postId: string, content: string) => {
     if (!currentUser || !content.trim()) return;
     const newComment = {
       id: `comment-${Date.now()}`,
@@ -614,16 +797,27 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       likesCount: 0
     };
 
+    let updatedPost: Post | undefined;
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
-      return { ...p, comments: [...p.comments, newComment] };
+      updatedPost = { ...p, comments: [...p.comments, newComment] };
+      return updatedPost;
     }));
+
+    if (updatedPost) {
+      try {
+        await setDoc(doc(db, 'posts', postId), updatedPost, { merge: true });
+      } catch (e) {
+        console.warn('Firestore comment save:', e);
+      }
+    }
   };
 
-  const likeComment = (postId: string, commentId: string) => {
+  const likeComment = async (postId: string, commentId: string) => {
+    let updatedPost: Post | undefined;
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
-      return {
+      updatedPost = {
         ...p,
         comments: p.comments.map(c => {
           if (c.id !== commentId) return c;
@@ -635,14 +829,33 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
         })
       };
+      return updatedPost;
     }));
+
+    if (updatedPost) {
+      try {
+        await setDoc(doc(db, 'posts', postId), updatedPost, { merge: true });
+      } catch (e) {
+        console.warn('Firestore like comment save:', e);
+      }
+    }
   };
 
-  const sharePost = (postId: string) => {
+  const sharePost = async (postId: string) => {
+    let updatedPost: Post | undefined;
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
-      return { ...p, sharesCount: p.sharesCount + 1 };
+      updatedPost = { ...p, sharesCount: p.sharesCount + 1 };
+      return updatedPost;
     }));
+
+    if (updatedPost) {
+      try {
+        await setDoc(doc(db, 'posts', postId), updatedPost, { merge: true });
+      } catch (e) {
+        console.warn('Firestore share post save:', e);
+      }
+    }
   };
 
   const toggleSavePost = (postId: string) => {
@@ -652,8 +865,10 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
-  const votePoll = (postId: string, optionId: string) => {
+  const votePoll = async (postId: string, optionId: string) => {
     if (!currentUser) return;
+    let updatedPost: Post | undefined;
+
     setPosts(prev => prev.map(post => {
       if (post.id !== postId || !post.poll) return post;
       
@@ -671,7 +886,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return opt;
       });
 
-      return {
+      updatedPost = {
         ...post,
         poll: {
           ...post.poll,
@@ -679,11 +894,25 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           totalVotes: post.poll.totalVotes + 1
         }
       };
+      return updatedPost;
     }));
+
+    if (updatedPost) {
+      try {
+        await setDoc(doc(db, 'posts', postId), updatedPost, { merge: true });
+      } catch (e) {
+        console.warn('Firestore poll vote save:', e);
+      }
+    }
   };
 
-  const deletePost = (postId: string) => {
+  const deletePost = async (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
+    try {
+      await deleteDoc(doc(db, 'posts', postId));
+    } catch (e) {
+      console.warn('Firestore delete post:', e);
+    }
   };
 
   // --- CHAT & MESSAGING OPERATIONS ---
@@ -715,38 +944,49 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
-  const deleteMessage = (conversationId: string, messageId: string) => {
+  const deleteMessage = async (conversationId: string, messageId: string) => {
     setMessages(prev => ({
       ...prev,
       [conversationId]: (prev[conversationId] || []).filter(m => m.id !== messageId)
     }));
+
+    try {
+      await deleteDoc(doc(db, 'messages', messageId));
+    } catch (e) {
+      console.warn('Firestore delete message:', e);
+    }
   };
 
-  const sendMessage = (
+  const sendMessage = async (
     conversationId: string, 
     content: { 
       text?: string; 
       mediaUrl?: string; 
       mediaType?: 'image' | 'audio' | 'file'; 
-      audioDuration?: number;
+      audioDuration?: number; 
       replyTo?: { id: string; text: string; senderName: string };
     }
   ) => {
     if (!currentUser) return;
 
-    const newMessage: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const newMessage: ChatMessage & { timestamp: number } = {
+      id: messageId,
       conversationId,
       senderId: currentUser.id,
       text: content.text,
       mediaUrl: content.mediaUrl,
       mediaType: content.mediaType,
       audioDuration: content.audioDuration,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      read: true,
-      replyTo: content.replyTo
+      createdAt: timeStr,
+      read: false,
+      replyTo: content.replyTo,
+      timestamp: Date.now()
     };
 
+    // 1. Optimistic local update
     setMessages(prev => ({
       ...prev,
       [conversationId]: [...(prev[conversationId] || []), newMessage]
@@ -757,13 +997,57 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return {
         ...c,
         lastMessage: newMessage,
-        updatedAt: 'Just now'
-      };
+        updatedAt: 'Just now',
+        timestamp: Date.now()
+      } as any;
     }));
+
+    // 2. Persist to Firestore
+    try {
+      const cleanMsgDoc = Object.fromEntries(
+        Object.entries(newMessage).filter(([_, v]) => v !== undefined)
+      );
+      await setDoc(doc(db, 'messages', messageId), cleanMsgDoc);
+
+      const currentConv = conversations.find(c => c.id === conversationId);
+      if (currentConv) {
+        const cleanConvDoc = Object.fromEntries(
+          Object.entries({
+            ...currentConv,
+            lastMessage: cleanMsgDoc,
+            updatedAt: 'Just now',
+            timestamp: Date.now()
+          }).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'conversations', conversationId), cleanConvDoc, { merge: true });
+
+        // Direct notification to recipient
+        const otherParticipant = currentConv.participants.find(p => p.id !== currentUser.id);
+        if (otherParticipant) {
+          const notifId = `notif_msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const notifDoc = {
+            id: notifId,
+            toUserId: otherParticipant.id,
+            type: 'message',
+            actor: currentUser,
+            message: `sent you a message: "${(content.text || 'Shared media').slice(0, 40)}"`,
+            createdAt: 'Just now',
+            read: false,
+            timestamp: Date.now(),
+            targetId: conversationId
+          };
+          await setDoc(doc(db, 'notifications', notifId), notifDoc);
+        }
+      }
+    } catch (e) {
+      console.warn('Firestore message save error:', e);
+    }
   };
 
-  const reactToMessage = (conversationId: string, messageId: string, emoji: string) => {
+  const reactToMessage = async (conversationId: string, messageId: string, emoji: string) => {
     if (!currentUser) return;
+    let updatedMessage: ChatMessage | undefined;
+
     setMessages(prev => {
       const convMessages = prev[conversationId] || [];
       const updated = convMessages.map(msg => {
@@ -780,10 +1064,22 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             { userId: currentUser.id, emoji }
           ];
         }
-        return { ...msg, reactions: newReactions };
+        updatedMessage = { ...msg, reactions: newReactions };
+        return updatedMessage;
       });
       return { ...prev, [conversationId]: updated };
     });
+
+    if (updatedMessage) {
+      try {
+        const cleanMsg = Object.fromEntries(
+          Object.entries(updatedMessage).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'messages', messageId), cleanMsg, { merge: true });
+      } catch (e) {
+        console.warn('Firestore react message save:', e);
+      }
+    }
   };
 
   const startDirectChat = (targetUser: User): string => {
@@ -793,11 +1089,14 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const freshCurrentUser = users.find(u => u.id === currentUser.id) || currentUser;
     const freshTargetUser = users.find(u => u.id === targetUser.id) || targetUser;
 
+    const deterministicId = `direct_${[freshCurrentUser.id, freshTargetUser.id].sort().join('___')}`;
+
     // Check if conversation already exists
     const existing = conversations.find(c => 
-      !c.isGroup && 
-      c.participantIds.includes(freshCurrentUser.id) && 
-      c.participantIds.includes(freshTargetUser.id)
+      c.id === deterministicId ||
+      (!c.isGroup && 
+       c.participantIds?.includes(freshCurrentUser.id) && 
+       c.participantIds?.includes(freshTargetUser.id))
     );
 
     if (existing) {
@@ -808,21 +1107,28 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     // Create new direct conversation
-    const newConvId = `conv-${Date.now()}`;
-    const newConv: Conversation = {
-      id: newConvId,
+    const newConv: Conversation & { timestamp: number } = {
+      id: deterministicId,
       isGroup: false,
       participantIds: [freshCurrentUser.id, freshTargetUser.id],
       participants: [freshCurrentUser, freshTargetUser],
       unreadCount: 0,
-      updatedAt: 'Just now'
+      updatedAt: 'Just now',
+      timestamp: Date.now()
     };
 
-    setConversations(prev => [newConv, ...prev]);
-    setMessages(prev => ({ ...prev, [newConvId]: [] }));
-    openFloatingChat(newConvId);
-    setActiveConversationId(newConvId);
-    return newConvId;
+    setConversations(prev => [newConv, ...prev.filter(c => c.id !== deterministicId)]);
+    setMessages(prev => ({ ...prev, [deterministicId]: prev[deterministicId] || [] }));
+    openFloatingChat(deterministicId);
+    setActiveConversationId(deterministicId);
+
+    try {
+      setDoc(doc(db, 'conversations', deterministicId), newConv, { merge: true });
+    } catch (e) {
+      console.warn('Firestore startDirectChat save:', e);
+    }
+
+    return deterministicId;
   };
 
   const createGroupChat = (name: string, participantUserIds: string[]): string => {
@@ -830,8 +1136,8 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const allParticipantIds = Array.from(new Set([currentUser.id, ...participantUserIds]));
     const participantsList = users.filter(u => allParticipantIds.includes(u.id));
     
-    const newConvId = `conv-group-${Date.now()}`;
-    const newGroupConv: Conversation = {
+    const newConvId = `group_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const newGroupConv: Conversation & { timestamp: number } = {
       id: newConvId,
       isGroup: true,
       name: name || 'Group Chat',
@@ -839,26 +1145,20 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       participantIds: allParticipantIds,
       participants: participantsList,
       unreadCount: 0,
-      updatedAt: 'Just now'
+      updatedAt: 'Just now',
+      timestamp: Date.now()
     };
 
     setConversations(prev => [newGroupConv, ...prev]);
-    setMessages(prev => ({
-      ...prev,
-      [newConvId]: [
-        {
-          id: `msg-${Date.now()}`,
-          conversationId: newConvId,
-          senderId: currentUser.id,
-          text: `Created group "${name}"`,
-          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          read: true
-        }
-      ]
-    }));
-
     openFloatingChat(newConvId);
     setActiveConversationId(newConvId);
+
+    try {
+      setDoc(doc(db, 'conversations', newConvId), newGroupConv);
+    } catch (e) {
+      console.warn('Firestore group conv save:', e);
+    }
+
     return newConvId;
   };
 
@@ -898,7 +1198,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return 'none';
   };
 
-  const sendFriendRequest = (toUserId: string) => {
+  const sendFriendRequest = async (toUserId: string) => {
     if (!currentUser || toUserId === currentUser.id) return;
     const target = users.find(u => u.id === toUserId);
     if (!target) return;
@@ -911,88 +1211,136 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
     if (existing) return;
 
-    const newReq: FriendRequest = {
-      id: `fr-${Date.now()}`,
+    const reqId = `fr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const newReq: FriendRequest & { timestamp: number } = {
+      id: reqId,
       fromUser: currentUser,
       toUserId,
       status: 'pending',
       mutualFriendsCount: 0,
-      createdAt: 'Just now'
+      createdAt: 'Just now',
+      timestamp: Date.now()
     };
 
     setFriendRequests(prev => [newReq, ...prev]);
 
-    // Send notification to target
-    const newNotif: AppNotification = {
-      id: `notif-${Date.now()}`,
-      type: 'friend_request',
-      actor: currentUser,
-      message: 'sent you a friend request on Sphere',
-      createdAt: 'Just now',
-      read: false
-    };
-    setNotifications(prev => [newNotif, ...prev]);
+    try {
+      await setDoc(doc(db, 'friendRequests', reqId), newReq);
+
+      // Send notification to target in Firestore
+      const notifId = `notif_fr_${Date.now()}`;
+      const newNotif = {
+        id: notifId,
+        toUserId,
+        type: 'friend_request',
+        actor: currentUser,
+        message: 'sent you a friend request on Sphere',
+        createdAt: 'Just now',
+        read: false,
+        timestamp: Date.now()
+      };
+      await setDoc(doc(db, 'notifications', notifId), newNotif);
+    } catch (e) {
+      console.warn('Firestore send friend request:', e);
+    }
   };
 
-  const cancelFriendRequest = (toUserId: string) => {
+  const cancelFriendRequest = async (toUserId: string) => {
     if (!currentUser) return;
+    const matchingReq = friendRequests.find(r => r.fromUser.id === currentUser.id && r.toUserId === toUserId);
     setFriendRequests(prev => prev.filter(r => !(r.fromUser.id === currentUser.id && r.toUserId === toUserId)));
+
+    if (matchingReq) {
+      try {
+        await deleteDoc(doc(db, 'friendRequests', matchingReq.id));
+      } catch (e) {
+        console.warn('Firestore cancel friend request:', e);
+      }
+    }
   };
 
-  const acceptFriendRequest = (requestId: string) => {
+  const acceptFriendRequest = async (requestId: string) => {
     const req = friendRequests.find(r => r.id === requestId);
     if (!req || !currentUser) return;
 
     // Remove request from pending
     setFriendRequests(prev => prev.filter(r => r.id !== requestId));
 
-    // Add friend link to both users
     const senderId = req.fromUser.id;
     const receiverId = currentUser.id;
 
+    const updatedReceiverFriends = currentUser.friends?.includes(senderId) 
+      ? currentUser.friends 
+      : [...(currentUser.friends || []), senderId];
+
+    const senderUser = users.find(u => u.id === senderId);
+    const updatedSenderFriends = senderUser?.friends?.includes(receiverId)
+      ? senderUser.friends
+      : [...(senderUser?.friends || []), receiverId];
+
     setUsers(prev => prev.map(u => {
       if (u.id === receiverId) {
-        const currentFriends = u.friends || [];
-        const newFriends = currentFriends.includes(senderId) ? currentFriends : [...currentFriends, senderId];
-        return { ...u, friends: newFriends, friendsCount: newFriends.length };
+        return { ...u, friends: updatedReceiverFriends, friendsCount: updatedReceiverFriends.length };
       }
       if (u.id === senderId) {
-        const currentFriends = u.friends || [];
-        const newFriends = currentFriends.includes(receiverId) ? currentFriends : [...currentFriends, receiverId];
-        return { ...u, friends: newFriends, friendsCount: newFriends.length };
+        return { ...u, friends: updatedSenderFriends, friendsCount: updatedSenderFriends.length };
       }
       return u;
     }));
 
-    // Notification for friend accept
-    const newNotif: AppNotification = {
-      id: `notif-${Date.now()}`,
-      type: 'friend_accept',
-      actor: req.fromUser,
-      message: 'is now connected as your friend on Sphere! 🎉',
-      createdAt: 'Just now',
-      read: false
-    };
-    setNotifications(prev => [newNotif, ...prev]);
+    try {
+      await deleteDoc(doc(db, 'friendRequests', requestId));
+      await setDoc(doc(db, 'users', receiverId), { friends: updatedReceiverFriends, friendsCount: updatedReceiverFriends.length }, { merge: true });
+      await setDoc(doc(db, 'users', senderId), { friends: updatedSenderFriends, friendsCount: updatedSenderFriends.length }, { merge: true });
+
+      const notifId = `notif_fa_${Date.now()}`;
+      const newNotif = {
+        id: notifId,
+        toUserId: senderId,
+        type: 'friend_accept',
+        actor: currentUser,
+        message: 'is now connected as your friend on Sphere! 🎉',
+        createdAt: 'Just now',
+        read: false,
+        timestamp: Date.now()
+      };
+      await setDoc(doc(db, 'notifications', notifId), newNotif);
+    } catch (e) {
+      console.warn('Firestore accept friend request:', e);
+    }
   };
 
-  const declineFriendRequest = (requestId: string) => {
+  const declineFriendRequest = async (requestId: string) => {
     setFriendRequests(prev => prev.filter(r => r.id !== requestId));
+    try {
+      await deleteDoc(doc(db, 'friendRequests', requestId));
+    } catch (e) {
+      console.warn('Firestore decline friend request:', e);
+    }
   };
 
-  const removeFriend = (targetUserId: string) => {
+  const removeFriend = async (targetUserId: string) => {
     if (!currentUser) return;
+    const newReceiverFriends = (currentUser.friends || []).filter(id => id !== targetUserId);
+    const targetUser = users.find(u => u.id === targetUserId);
+    const newTargetFriends = (targetUser?.friends || []).filter(id => id !== currentUser.id);
+
     setUsers(prev => prev.map(u => {
       if (u.id === currentUser.id) {
-        const newFriends = (u.friends || []).filter(id => id !== targetUserId);
-        return { ...u, friends: newFriends, friendsCount: newFriends.length };
+        return { ...u, friends: newReceiverFriends, friendsCount: newReceiverFriends.length };
       }
       if (u.id === targetUserId) {
-        const newFriends = (u.friends || []).filter(id => id !== currentUser.id);
-        return { ...u, friends: newFriends, friendsCount: newFriends.length };
+        return { ...u, friends: newTargetFriends, friendsCount: newTargetFriends.length };
       }
       return u;
     }));
+
+    try {
+      await setDoc(doc(db, 'users', currentUser.id), { friends: newReceiverFriends, friendsCount: newReceiverFriends.length }, { merge: true });
+      await setDoc(doc(db, 'users', targetUserId), { friends: newTargetFriends, friendsCount: newTargetFriends.length }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore remove friend:', e);
+    }
   };
 
   const isFriend = (userId: string) => {
@@ -1017,7 +1365,10 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const unreadMessagesTotal = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
-  const unreadNotificationsTotal = notifications.filter(n => !n.read).length;
+  const unreadNotificationsTotal = notifications.filter(n => {
+    const isForMe = !n.toUserId || (currentUser && n.toUserId === currentUser.id);
+    return isForMe && !n.read;
+  }).length;
 
   return (
     <SocialContext.Provider
@@ -1092,3 +1443,4 @@ export const useSocial = () => {
   }
   return context;
 };
+
