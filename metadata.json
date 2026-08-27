@@ -1,0 +1,6 @@
+{
+  "name": "Sphere Social & Chat",
+  "description": "A vibrant social networking platform featuring user account registration and login, feed timeline posts, reactions, comments, interactive direct messaging, voice notes, group chats, and real-time connection management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
