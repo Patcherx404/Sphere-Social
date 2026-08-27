@@ -12,12 +12,14 @@ import {
   createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { 
+  initializeFirestore,
   getFirestore, 
   doc, 
   setDoc, 
   getDoc, 
   collection, 
-  onSnapshot 
+  onSnapshot,
+  Firestore
 } from 'firebase/firestore';
 import defaultConfig from '../../firebase-applet-config.json';
 
@@ -36,17 +38,30 @@ const firebaseConfig: FirebaseOptions & { firestoreDatabaseId?: string } = {
 // Initialize Firebase App singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Firebase Auth & Firestore
+// Firebase Auth
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
-// Setup Firestore database with the configured database ID if provided
-export const db = firebaseConfig.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Setup Firestore database with long-polling resilience for browser/sandbox environments
+let firestoreDb: Firestore;
+try {
+  const dbSettings = {
+    experimentalAutoDetectLongPolling: true,
+    ignoreUndefinedProperties: true
+  };
+  firestoreDb = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? initializeFirestore(app, dbSettings, firebaseConfig.firestoreDatabaseId)
+    : initializeFirestore(app, dbSettings);
+} catch {
+  firestoreDb = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+    : getFirestore(app);
+}
+
+export const db = firestoreDb;
 
 export const isVercelHost = (): boolean => {
   if (typeof window === 'undefined') return false;

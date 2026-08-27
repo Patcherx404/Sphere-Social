@@ -31,6 +31,7 @@ export const Navbar: React.FC = () => {
     acceptFriendRequest,
     cancelFriendRequest,
     removeFriend,
+    friendRequests,
     logout
   } = useSocial();
 
@@ -265,11 +266,14 @@ export const Navbar: React.FC = () => {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const req = currentUser ? null : null; // accept handled
-                                    // Accept through friend requests in context
+                                    const req = friendRequests.find(r => r.fromUser.id === user.id && r.toUserId === currentUser.id && r.status === 'pending');
+                                    if (req) {
+                                      acceptFriendRequest(req.id);
+                                    }
                                   }}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#3366FF] hover:bg-[#254edb] text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#3366FF] hover:bg-[#254edb] text-white text-[10px] font-bold transition-colors cursor-pointer shadow-xs"
                                 >
+                                  <Check className="w-3 h-3" />
                                   <span>Accept</span>
                                 </button>
                               ) : (

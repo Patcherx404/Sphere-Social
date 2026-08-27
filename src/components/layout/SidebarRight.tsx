@@ -26,7 +26,7 @@ export const SidebarRight: React.FC = () => {
     { tag: '#GenerativeDesign', posts: '4.8k posts', category: 'Design & Tech' },
     { tag: '#AlpineAscents', posts: '2.1k posts', category: 'Outdoors' },
     { tag: '#AnalogSynthesizer', posts: '1.9k posts', category: 'Music' },
-    { tag: '#ZeroShotAI', posts: '6.3k posts', category: 'Artificial Intelligence' }
+    { tag: '#WebEngineering', posts: '5.2k posts', category: 'Technology' }
   ];
 
   return (

@@ -17,7 +17,9 @@ import {
   db, 
   doc, 
   setDoc, 
-  getDoc 
+  getDoc,
+  collection,
+  onSnapshot
 } from '../lib/firebase';
 
 interface SocialContextType {
@@ -103,24 +105,27 @@ interface SocialContextType {
 const SocialContext = createContext<SocialContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  CURRENT_USER_ID: 'sphere_current_user_id_v3',
-  USERS: 'sphere_registered_users_v3',
-  POSTS: 'sphere_posts_v3',
-  CONVERSATIONS: 'sphere_conversations_v3',
-  MESSAGES: 'sphere_messages_v3',
-  NOTIFICATIONS: 'sphere_notifications_v3',
-  FRIEND_REQUESTS: 'sphere_friend_requests_v3'
+  CURRENT_USER_ID: 'sphere_real_current_user_v4',
+  USERS: 'sphere_real_users_v4',
+  POSTS: 'sphere_real_posts_v4',
+  CONVERSATIONS: 'sphere_real_conversations_v4',
+  MESSAGES: 'sphere_real_messages_v4',
+  NOTIFICATIONS: 'sphere_real_notifications_v4',
+  FRIEND_REQUESTS: 'sphere_real_friend_requests_v4'
 };
 
 export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Load registered users from LocalStorage
+  // Load real registered users from LocalStorage and Firestore
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
       } catch (e) {
-        return [];
+        console.warn('LocalStorage users parse error:', e);
       }
     }
     return [];
@@ -202,6 +207,35 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   const [activeCall, setActiveCall] = useState<{ conversationId: string; user?: User; isGroup?: boolean; isVideo?: boolean } | null>(null);
+
+  // Real-time Firestore users listener to guarantee all real created users are searchable and reachable
+  useEffect(() => {
+    try {
+      const usersColRef = collection(db, 'users');
+      const unsubscribe = onSnapshot(usersColRef, (snapshot) => {
+        const firestoreUsers: User[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as User;
+          if (data && data.id) {
+            firestoreUsers.push(data);
+          }
+        });
+        if (firestoreUsers.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            prev.forEach(u => map.set(u.id, u));
+            firestoreUsers.forEach(u => map.set(u.id, { ...(map.get(u.id) || {}), ...u }));
+            return Array.from(map.values());
+          });
+        }
+      }, (error) => {
+        console.warn('Firestore users sync note:', error);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore users listener initialization:', e);
+    }
+  }, []);
 
   // Sync state changes to localStorage
   useEffect(() => {
@@ -726,76 +760,6 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updatedAt: 'Just now'
       };
     }));
-
-    // Check if recipient is a peer user in direct conversation
-    const currentConv = conversations.find(c => c.id === conversationId);
-    if (currentConv && !currentConv.isGroup) {
-      const recipient = currentConv.participants.find(p => p.id !== currentUser.id);
-      
-      // Auto reply simulation for active conversational feel if recipient exists
-      if (recipient) {
-        // Show typing indicator after 600ms
-        setTimeout(() => {
-          setConversations(prev => prev.map(c => {
-            if (c.id === conversationId) {
-              return { ...c, typingUsers: [recipient.id] };
-            }
-            return c;
-          }));
-        }, 600);
-
-        // Send simulated intelligent reply after 1800ms
-        setTimeout(() => {
-          const autoReplies = [
-            `Hey ${currentUser.name.split(' ')[0]}! Thanks for messaging! 👋`,
-            "Got your message! Hope you're having a wonderful day! ✨",
-            "Awesome! Let's connect more on Sphere!",
-            "Love this! Thanks for sharing 🙌",
-            "Sounds great! Looking forward to catching up soon 🚀",
-            "Hey! Appreciate you reaching out! 👍"
-          ];
-          const chosenReply = autoReplies[Math.floor(Math.random() * autoReplies.length)];
-
-          const replyMsg: ChatMessage = {
-            id: `msg-${Date.now()}-reply`,
-            conversationId,
-            senderId: recipient.id,
-            text: chosenReply,
-            createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            read: false
-          };
-
-          setMessages(prev => ({
-            ...prev,
-            [conversationId]: [...(prev[conversationId] || []), replyMsg]
-          }));
-
-          setConversations(prev => prev.map(c => {
-            if (c.id === conversationId) {
-              return {
-                ...c,
-                lastMessage: replyMsg,
-                updatedAt: 'Just now',
-                typingUsers: []
-              };
-            }
-            return c;
-          }));
-
-          // Send notification to current user
-          const newNotif: AppNotification = {
-            id: `notif-${Date.now()}`,
-            type: 'message',
-            actor: recipient,
-            message: `sent you a message: "${chosenReply.slice(0, 35)}..."`,
-            createdAt: 'Just now',
-            read: false
-          };
-          setNotifications(prev => [newNotif, ...prev]);
-
-        }, 1800);
-      }
-    }
   };
 
   const reactToMessage = (conversationId: string, messageId: string, emoji: string) => {
@@ -825,11 +789,15 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const startDirectChat = (targetUser: User): string => {
     if (!currentUser || targetUser.id === currentUser.id) return '';
     
+    // Always get latest fresh user objects
+    const freshCurrentUser = users.find(u => u.id === currentUser.id) || currentUser;
+    const freshTargetUser = users.find(u => u.id === targetUser.id) || targetUser;
+
     // Check if conversation already exists
     const existing = conversations.find(c => 
       !c.isGroup && 
-      c.participantIds.includes(currentUser.id) && 
-      c.participantIds.includes(targetUser.id)
+      c.participantIds.includes(freshCurrentUser.id) && 
+      c.participantIds.includes(freshTargetUser.id)
     );
 
     if (existing) {
@@ -839,13 +807,13 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return existing.id;
     }
 
-    // Create new conversation
+    // Create new direct conversation
     const newConvId = `conv-${Date.now()}`;
     const newConv: Conversation = {
       id: newConvId,
       isGroup: false,
-      participantIds: [currentUser.id, targetUser.id],
-      participants: [currentUser, targetUser],
+      participantIds: [freshCurrentUser.id, freshTargetUser.id],
+      participants: [freshCurrentUser, freshTargetUser],
       unreadCount: 0,
       updatedAt: 'Just now'
     };

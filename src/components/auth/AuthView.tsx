@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  UserPlus, LogIn, Lock, User as UserIcon, Sparkles, Check, 
-  AlertCircle, Eye, EyeOff, Image, ShieldCheck, ArrowRight, Mail,
-  Globe, HelpCircle, ExternalLink
+  UserPlus, LogIn, Lock, User as UserIcon, Check, 
+  AlertCircle, Eye, EyeOff, Image, ShieldCheck, ArrowRight, Mail
 } from 'lucide-react';
 import { useSocial } from '../../context/SocialContext';
 import { AVATAR_PRESETS } from '../../data/mockData';
-import { isVercelHost } from '../../lib/firebase';
 
 export const AuthView: React.FC = () => {
   const { 
@@ -20,11 +18,9 @@ export const AuthView: React.FC = () => {
 
   const [mode, setMode] = useState<'register' | 'login'>('login');
   const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [googleEmailInput, setGoogleEmailInput] = useState('projectile.afk@gmail.com');
+  const [googleEmailInput, setGoogleEmailInput] = useState('');
   const [googleNameInput, setGoogleNameInput] = useState('');
   const [isFirebaseGoogleLoading, setIsFirebaseGoogleLoading] = useState(false);
-  const [showVercelGuide, setShowVercelGuide] = useState(false);
-  const [isVercel, setIsVercel] = useState(false);
   
   // Registration form state
   const [regName, setRegName] = useState('');
@@ -39,16 +35,12 @@ export const AuthView: React.FC = () => {
   const [showRegPassword, setShowRegPassword] = useState(false);
 
   // Login form state
-  const [loginIdentifier, setLoginIdentifier] = useState('projectile_afk');
-  const [loginPassword, setLoginPassword] = useState('password123');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    setIsVercel(isVercelHost());
-  }, []);
 
   const handleFirebaseGoogleSignIn = async () => {
     setErrorMsg(null);
@@ -58,27 +50,16 @@ export const AuthView: React.FC = () => {
     try {
       const result = await loginWithGoogleFirebase();
       if (!result.success) {
-        // If domain not authorized on Vercel or popup blocked
         if (result.error?.includes('auth/unauthorized-domain') || result.error?.includes('unauthorized domain')) {
-          setErrorMsg('Vercel domain is not yet whitelisted in Firebase Console. Logging you in instantly with Quick Connect below...');
-          setTimeout(() => {
-            handleGoogleSignIn('projectile.afk@gmail.com', 'Projectile AFK');
-          }, 1200);
+          setShowGoogleModal(true);
         } else {
-          setErrorMsg(result.error || 'Google Sign-In could not complete. Used instant sign-in below.');
+          setErrorMsg(result.error || 'Google Sign-In failed.');
         }
       } else {
-        setSuccessMsg('Successfully connected via Firebase!');
+        setSuccessMsg('Successfully connected via Google!');
       }
     } catch (err: any) {
-      if (err.message?.includes('unauthorized-domain')) {
-        setErrorMsg('Vercel domain requires whitelisting in Firebase Console. Logging in via Quick Connect...');
-        setTimeout(() => {
-          handleGoogleSignIn('projectile.afk@gmail.com', 'Projectile AFK');
-        }, 1000);
-      } else {
-        setErrorMsg(err.message || 'Firebase Google Sign-In failed.');
-      }
+      setErrorMsg(err.message || 'Firebase Google Sign-In failed.');
     } finally {
       setIsFirebaseGoogleLoading(false);
     }
@@ -172,38 +153,7 @@ export const AuthView: React.FC = () => {
             Connect with friends, share updates, and message in real-time.
           </p>
 
-          {/* Vercel Friendly Notice */}
-          <div className="mt-3 p-2.5 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 text-left">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
-                <Globe className="w-3.5 h-3.5 text-[#3366FF]" />
-                <span>Vercel & Web Deployment Ready</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowVercelGuide(!showVercelGuide)}
-                className="text-[10px] text-[#3366FF] hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
-              >
-                <span>OAuth Setup</span>
-                <HelpCircle className="w-3 h-3" />
-              </button>
-            </div>
-            <p className="text-[11px] text-blue-700/90 mt-1 leading-relaxed">
-              Click <strong>Quick Connect: projectile.afk@gmail.com</strong> below to sign in instantly with 1-click on any Vercel domain!
-            </p>
-            {showVercelGuide && (
-              <div className="mt-2 pt-2 border-t border-blue-200/60 text-[10px] text-slate-600 space-y-1">
-                <p className="font-semibold text-slate-800">To enable Google OAuth Popup on custom Vercel URLs:</p>
-                <ol className="list-decimal pl-4 space-y-0.5 text-slate-600">
-                  <li>Open Firebase Console → Authentication → Settings tab</li>
-                  <li>Scroll to <strong>Authorized domains</strong></li>
-                  <li>Click <em>Add domain</em> and paste your Vercel URL (e.g. <code>your-app.vercel.app</code>)</li>
-                </ol>
-              </div>
-            )}
-          </div>
-
-          {/* Prominent Firebase Google Sign-In Button */}
+          {/* Prominent Google Sign-In Button */}
           <div className="mt-4 space-y-2">
             <button
               type="button"
@@ -222,27 +172,8 @@ export const AuthView: React.FC = () => {
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                 </svg>
               )}
-              <span>{isFirebaseGoogleLoading ? 'Connecting to Google...' : 'Sign in with Google (Firebase)'}</span>
+              <span>{isFirebaseGoogleLoading ? 'Connecting to Google...' : 'Sign in with Google'}</span>
             </button>
-
-            {/* Quick 1-Click for projectile.afk@gmail.com */}
-            <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
-              <button
-                type="button"
-                onClick={() => handleGoogleSignIn('projectile.afk@gmail.com', 'Projectile AFK')}
-                className="text-[#3366FF] hover:underline font-bold flex items-center gap-1 cursor-pointer bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200"
-              >
-                <span>⚡ 1-Click: projectile.afk@gmail.com</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowGoogleModal(true)}
-                className="text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
-              >
-                Other Gmail
-              </button>
-            </div>
           </div>
 
           {/* Divider */}
