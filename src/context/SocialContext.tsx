@@ -8,12 +8,24 @@ import {
   INITIAL_CONVERSATIONS, INITIAL_MESSAGES, INITIAL_NOTIFICATIONS, 
   INITIAL_FRIEND_REQUESTS, AVATAR_PRESETS, COVER_PRESETS 
 } from '../data/mockData';
+import { 
+  auth, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut as firebaseSignOut, 
+  onAuthStateChanged,
+  db, 
+  doc, 
+  setDoc, 
+  getDoc 
+} from '../lib/firebase';
 
 interface SocialContextType {
   currentUser: User | null;
   users: User[];
   registerUser: (data: { name: string; handle: string; email?: string; password: string; avatar?: string; bio?: string }) => { success: boolean; error?: string };
   loginUser: (handleOrEmail: string, password?: string) => { success: boolean; error?: string };
+  loginWithGoogleFirebase: () => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: (email: string, name?: string, avatar?: string) => { success: boolean; error?: string };
   loginWithUserId: (userId: string) => void;
   logout: () => void;
@@ -224,7 +236,129 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem(STORAGE_KEYS.FRIEND_REQUESTS, JSON.stringify(friendRequests));
   }, [friendRequests]);
 
+  // Listen for Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            const data = userDocSnap.data() as User;
+            setUsers(prev => {
+              const exists = prev.some(u => u.id === data.id);
+              if (exists) {
+                return prev.map(u => u.id === data.id ? { ...u, ...data, isOnline: true } : u);
+              }
+              return [{ ...data, isOnline: true }, ...prev];
+            });
+            setCurrentUserId(data.id);
+          } else {
+            const email = firebaseUser.email || '';
+            const emailPrefix = email ? email.split('@')[0] : 'user';
+            const derivedName = firebaseUser.displayName || emailPrefix
+              .split(/[._-]/)
+              .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+              .join(' ') || 'Google User';
+            const derivedHandle = emailPrefix.toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
+
+            let finalHandle = derivedHandle;
+            let counter = 1;
+            while (users.some(u => u.handle.toLowerCase() === finalHandle && u.id !== firebaseUser.uid)) {
+              finalHandle = `${derivedHandle}${counter}`;
+              counter++;
+            }
+
+            const newGoogleUser: User = {
+              id: firebaseUser.uid,
+              name: derivedName,
+              handle: finalHandle,
+              email: email || undefined,
+              avatar: firebaseUser.photoURL || AVATAR_PRESETS[0],
+              coverPhoto: COVER_PRESETS[0],
+              bio: `Signed in via Google (${email || 'Firebase Auth'}) 🌐`,
+              joinedDate: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+              isOnline: true,
+              friendsCount: 0,
+              followersCount: 0,
+              verified: true,
+              friends: []
+            };
+
+            await setDoc(userDocRef, newGoogleUser);
+            setUsers(prev => [newGoogleUser, ...prev]);
+            setCurrentUserId(newGoogleUser.id);
+          }
+        } catch (err) {
+          console.warn('Firestore profile sync note:', err);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // --- AUTHENTICATION METHODS ---
+  const loginWithGoogleFirebase = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+      if (firebaseUser) {
+        // Create/sync user immediately
+        const email = firebaseUser.email || 'projectile.afk@gmail.com';
+        const emailPrefix = email.split('@')[0];
+        const derivedName = firebaseUser.displayName || emailPrefix
+          .split(/[._-]/)
+          .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+          .join(' ') || 'Google User';
+        const derivedHandle = emailPrefix.toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
+
+        const newGoogleUser: User = {
+          id: firebaseUser.uid,
+          name: derivedName,
+          handle: derivedHandle,
+          email: email,
+          avatar: firebaseUser.photoURL || AVATAR_PRESETS[0],
+          coverPhoto: COVER_PRESETS[0],
+          bio: `Signed in via Google (${email}) 🌐`,
+          joinedDate: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          isOnline: true,
+          friendsCount: 0,
+          followersCount: 0,
+          verified: true,
+          friends: []
+        };
+
+        try {
+          await setDoc(doc(db, 'users', firebaseUser.uid), newGoogleUser, { merge: true });
+        } catch (e) {
+          console.warn('Firestore sync failed:', e);
+        }
+
+        setUsers(prev => {
+          const filtered = prev.filter(u => u.id !== firebaseUser.uid);
+          return [newGoogleUser, ...filtered];
+        });
+        setCurrentUserId(firebaseUser.uid);
+
+        return { success: true };
+      }
+      return { success: false, error: 'No user credential received from Google.' };
+    } catch (err: any) {
+      console.warn('Firebase Google Sign-In error:', err);
+      let errorMsg = err.message || 'Google sign-in could not be completed.';
+      if (err.code === 'auth/popup-blocked') {
+        errorMsg = 'Popup was blocked by your browser/iframe. You can click Quick Sign-In with projectile.afk@gmail.com below.';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        errorMsg = 'Sign-in popup was closed before completing.';
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        errorMsg = 'Sign-in cancelled.';
+      }
+      return { success: false, error: errorMsg };
+    }
+  };
+
   const registerUser = (data: { 
     name: string; 
     handle: string; 
@@ -271,6 +405,12 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       friends: []
     };
 
+    try {
+      setDoc(doc(db, 'users', newUserId), newUser);
+    } catch (e) {
+      console.warn('Firestore user save:', e);
+    }
+
     setUsers(prev => [newUser, ...prev]);
     setCurrentUserId(newUserId);
     return { success: true };
@@ -295,7 +435,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return { success: true };
   };
 
-  // Login with Google / Gmail
+  // Login with Google / Gmail (Direct fallback & Firestore sync)
   const loginWithGoogle = (email: string, name?: string, avatar?: string): { success: boolean; error?: string } => {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -346,6 +486,12 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       friends: []
     };
 
+    try {
+      setDoc(doc(db, 'users', newUserId), newGoogleUser);
+    } catch (e) {
+      console.warn('Firestore user save:', e);
+    }
+
     setUsers(prev => [newGoogleUser, ...prev]);
     setCurrentUserId(newUserId);
     return { success: true };
@@ -358,7 +504,12 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await firebaseSignOut(auth);
+    } catch (e) {
+      console.warn('Firebase signout note:', e);
+    }
     setCurrentUserId(null);
     setActiveConversationId(null);
     setFloatingChats([]);
@@ -370,9 +521,15 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateCurrentUserProfile = (updates: Partial<User>) => {
     if (!currentUser) return;
+    const updatedUser = { ...currentUser, ...updates };
+    try {
+      setDoc(doc(db, 'users', currentUser.id), updatedUser, { merge: true });
+    } catch (e) {
+      console.warn('Firestore update note:', e);
+    }
     setUsers(prev => prev.map(u => {
       if (u.id === currentUser.id) {
-        return { ...u, ...updates };
+        return updatedUser;
       }
       return u;
     }));
@@ -901,6 +1058,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         users,
         registerUser,
         loginUser,
+        loginWithGoogleFirebase,
         loginWithGoogle,
         loginWithUserId,
         logout,

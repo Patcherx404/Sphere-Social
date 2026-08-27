@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile data stored in Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "handle": { "type": "string" },
+        "email": { "type": "string" },
+        "avatar": { "type": "string" },
+        "coverPhoto": { "type": "string" },
+        "bio": { "type": "string" },
+        "joinedDate": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "friendsCount": { "type": "number" },
+        "followersCount": { "type": "number" },
+        "verified": { "type": "boolean" },
+        "friends": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "name", "handle"]
+    }
+  }
+}
