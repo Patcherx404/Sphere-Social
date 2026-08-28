@@ -31,7 +31,11 @@ export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversa
   const conversation = conversations.find(c => c.id === conversationId);
   const clearTimestamp = (currentUser && conversation?.clearedAtForUsers?.[currentUser.id]) || 0;
   const rawMessages = messages[conversationId] || [];
-  const convMessages = rawMessages.filter(m => (m.timestamp || 0) >= clearTimestamp);
+  const convMessages = rawMessages.filter(m => {
+    if (!clearTimestamp) return true;
+    const msgTs = typeof m.timestamp === 'number' && !isNaN(m.timestamp) ? m.timestamp : 0;
+    return msgTs >= clearTimestamp;
+  });
 
   const [inputVal, setInputVal] = useState('');
   const [showImagePicker, setShowImagePicker] = useState(false);
@@ -69,7 +73,7 @@ export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversa
     return () => clearInterval(timer);
   }, [isRecordingVoice]);
 
-  if (!conversation || (currentUser && conversation.deletedForUserIds?.includes(currentUser.id))) {
+  if (!conversation) {
     return null;
   }
 

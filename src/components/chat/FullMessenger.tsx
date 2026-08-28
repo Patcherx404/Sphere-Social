@@ -44,7 +44,7 @@ export const FullMessenger: React.FC = () => {
 
   const filteredConversations = conversations.filter(c => {
     if (!currentUser) return false;
-    if (c.deletedForUserIds?.includes(currentUser.id)) return false;
+    if (c.deletedForUserIds?.includes(currentUser.id) && c.id !== activeConversationId) return false;
     if (c.participantIds && c.participantIds.length > 0 && !c.participantIds.includes(currentUser.id)) {
       return false;
     }
@@ -64,7 +64,11 @@ export const FullMessenger: React.FC = () => {
 
   const clearTimestamp = (currentUser && activeConversation?.clearedAtForUsers?.[currentUser.id]) || 0;
   const rawMessages = activeId ? messages[activeId] || [] : [];
-  const currentMessages = rawMessages.filter(m => (m.timestamp || 0) >= clearTimestamp);
+  const currentMessages = rawMessages.filter(m => {
+    if (!clearTimestamp) return true;
+    const msgTs = typeof m.timestamp === 'number' && !isNaN(m.timestamp) ? m.timestamp : 0;
+    return msgTs >= clearTimestamp;
+  });
 
   const getResolvedParticipant = (p: User) => {
     return users.find(u => u.id === p.id) || p;

@@ -281,10 +281,17 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         snapshot.forEach(docSnap => {
           const data = docSnap.data() as ChatMessage & { timestamp?: number };
           if (data && data.id && data.conversationId) {
+            const timestampNum = typeof data.timestamp === 'number' && !isNaN(data.timestamp) && data.timestamp > 0
+              ? data.timestamp
+              : Date.now();
+            const msgItem: ChatMessage = {
+              ...data,
+              timestamp: timestampNum
+            };
             if (!newMsgMap[data.conversationId]) {
               newMsgMap[data.conversationId] = [];
             }
-            newMsgMap[data.conversationId].push(data);
+            newMsgMap[data.conversationId].push(msgItem);
           }
         });
 
@@ -923,6 +930,21 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     setMinimizedChats(prev => ({ ...prev, [conversationId]: false }));
     markConversationAsRead(conversationId);
+
+    if (currentUser) {
+      setConversations(prev => prev.map(c => {
+        if (c.id === conversationId && c.deletedForUserIds?.includes(currentUser.id)) {
+          const updatedDeleted = (c.deletedForUserIds || []).filter(id => id !== currentUser.id);
+          try {
+            setDoc(doc(db, 'conversations', conversationId), { deletedForUserIds: updatedDeleted }, { merge: true });
+          } catch (e) {
+            console.warn('Firestore restore in openFloatingChat:', e);
+          }
+          return { ...c, deletedForUserIds: updatedDeleted };
+        }
+        return c;
+      }));
+    }
   };
 
   const closeFloatingChat = (conversationId: string) => {
@@ -1024,6 +1046,10 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    const currentConv = conversations.find(c => c.id === conversationId);
+    const clearTs = (currentConv?.clearedAtForUsers?.[currentUser.id]) || 0;
+    const msgTimestamp = Math.max(Date.now(), clearTs + 1);
+
     const newMessage: ChatMessage & { timestamp: number } = {
       id: messageId,
       conversationId,
@@ -1035,7 +1061,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       createdAt: timeStr,
       read: false,
       replyTo: content.replyTo,
-      timestamp: Date.now()
+      timestamp: msgTimestamp
     };
 
     // 1. Optimistic local update
@@ -1044,13 +1070,16 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       [conversationId]: [...(prev[conversationId] || []), newMessage]
     }));
 
+    // Ensure conversation is unhidden for current user and has fresh lastMessage
     setConversations(prev => prev.map(c => {
       if (c.id !== conversationId) return c;
+      const updatedDeleted = (c.deletedForUserIds || []).filter(id => id !== currentUser.id);
       return {
         ...c,
+        deletedForUserIds: updatedDeleted,
         lastMessage: newMessage,
         updatedAt: 'Just now',
-        timestamp: Date.now()
+        timestamp: msgTimestamp
       } as any;
     }));
 
@@ -1061,14 +1090,15 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       );
       await setDoc(doc(db, 'messages', messageId), cleanMsgDoc);
 
-      const currentConv = conversations.find(c => c.id === conversationId);
       if (currentConv) {
+        const updatedDeleted = (currentConv.deletedForUserIds || []).filter(id => id !== currentUser.id);
         const cleanConvDoc = Object.fromEntries(
           Object.entries({
             ...currentConv,
+            deletedForUserIds: updatedDeleted,
             lastMessage: cleanMsgDoc,
             updatedAt: 'Just now',
-            timestamp: Date.now()
+            timestamp: msgTimestamp
           }).filter(([_, v]) => v !== undefined)
         );
         await setDoc(doc(db, 'conversations', conversationId), cleanConvDoc, { merge: true });
@@ -1146,21 +1176,29 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Check if conversation already exists
     const existing = conversations.find(c => 
       c.id === deterministicId ||
-      (!c.isGroup && 
-       c.participantIds?.includes(freshCurrentUser.id) && 
-       c.participantIds?.includes(freshTargetUser.id))
+      (!c.isGroup && (
+        (c.participantIds?.includes(freshCurrentUser.id) && c.participantIds?.includes(freshTargetUser.id)) ||
+        (c.participants?.some(p => p.id === freshCurrentUser.id) && c.participants?.some(p => p.id === freshTargetUser.id))
+      ))
     );
 
     if (existing) {
-      if (existing.deletedForUserIds?.includes(freshCurrentUser.id)) {
-        const updatedDeleted = (existing.deletedForUserIds || []).filter(id => id !== freshCurrentUser.id);
-        const updatedConv = { ...existing, deletedForUserIds: updatedDeleted };
-        setConversations(prev => prev.map(c => c.id === existing.id ? updatedConv : c));
-        try {
-          setDoc(doc(db, 'conversations', existing.id), { deletedForUserIds: updatedDeleted }, { merge: true });
-        } catch (e) {
-          console.warn('Restore conv on startDirectChat:', e);
-        }
+      const updatedDeleted = (existing.deletedForUserIds || []).filter(id => id !== freshCurrentUser.id);
+      const updatedConv: Conversation = { 
+        ...existing, 
+        deletedForUserIds: updatedDeleted,
+        participants: [freshCurrentUser, freshTargetUser],
+        participantIds: [freshCurrentUser.id, freshTargetUser.id]
+      };
+      setConversations(prev => prev.map(c => c.id === existing.id ? updatedConv : c));
+      try {
+        setDoc(doc(db, 'conversations', existing.id), { 
+          deletedForUserIds: updatedDeleted,
+          participants: [freshCurrentUser, freshTargetUser],
+          participantIds: [freshCurrentUser.id, freshTargetUser.id]
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Restore conv on startDirectChat:', e);
       }
       openFloatingChat(existing.id);
       setActiveConversationId(existing.id);
@@ -1176,7 +1214,8 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       participants: [freshCurrentUser, freshTargetUser],
       unreadCount: 0,
       updatedAt: 'Just now',
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      deletedForUserIds: []
     };
 
     setConversations(prev => [newConv, ...prev.filter(c => c.id !== deterministicId)]);

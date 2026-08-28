@@ -80,6 +80,7 @@ export interface ChatMessage {
   audioDuration?: number;
   createdAt: string;
   read: boolean;
+  timestamp?: number;
   reactions?: MessageReaction[];
   replyTo?: {
     id: string;
