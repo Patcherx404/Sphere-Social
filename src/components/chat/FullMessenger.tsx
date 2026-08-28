@@ -19,6 +19,7 @@ export const FullMessenger: React.FC = () => {
     sendMessage, 
     reactToMessage, 
     deleteConversationSecretly,
+    vanishAllChats,
     startDirectChat,
     createGroupChat,
     startCall,
@@ -40,6 +41,8 @@ export const FullMessenger: React.FC = () => {
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [userPickerSearch, setUserPickerSearch] = useState('');
   const [secretDeleteTargetConv, setSecretDeleteTargetConv] = useState<Conversation | null>(null);
+  const [isVanishModalOpen, setIsVanishModalOpen] = useState(false);
+  const [isVanishing, setIsVanishing] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -243,6 +246,15 @@ export const FullMessenger: React.FC = () => {
               )}
             </h2>
             <div className="flex items-center gap-1.5">
+              <button
+                id="btn-vanish-all-chats"
+                onClick={() => setIsVanishModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold transition-colors cursor-pointer border border-amber-200/60"
+                title="Vanish All Chats & Clean Start"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">Fresh Start</span>
+              </button>
               <button
                 id="btn-new-chat"
                 onClick={() => {
@@ -1061,6 +1073,63 @@ export const FullMessenger: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Fresh Start / Vanish All Chats Modal */}
+      {isVanishModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center mx-auto text-amber-600 shadow-inner">
+              <Sparkles className="w-7 h-7 animate-pulse" />
+            </div>
+            
+            <div className="space-y-1.5">
+              <h3 className="font-extrabold text-base text-slate-900">Vanish All Chats (Fresh Start)?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                This will completely clear all chat conversations and messages across all connected sessions for a clean, fresh start.
+              </p>
+            </div>
+
+            <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-2xl text-[11px] text-amber-800 text-left flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>Posts, friendships, and user profiles will remain completely intact.</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                disabled={isVanishing}
+                onClick={() => setIsVanishModalOpen(false)}
+                className="w-full py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isVanishing}
+                onClick={async () => {
+                  setIsVanishing(true);
+                  try {
+                    await vanishAllChats();
+                  } finally {
+                    setIsVanishing(false);
+                    setIsVanishModalOpen(false);
+                  }
+                }}
+                className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-[#FF3D71] text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg hover:opacity-95 cursor-pointer disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
+              >
+                {isVanishing ? (
+                  <span>Vanishing...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Vanish All</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

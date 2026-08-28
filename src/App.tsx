@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { SocialProvider, useSocial } from './context/SocialContext';
 import { Navbar } from './components/layout/Navbar';
 import { SidebarLeft } from './components/layout/SidebarLeft';
@@ -22,16 +22,18 @@ const MainContent: React.FC = () => {
     return <AuthView />;
   }
 
-  const filteredPosts = posts.filter(post => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      post.content.toLowerCase().includes(q) ||
-      post.author.name.toLowerCase().includes(q) ||
-      post.author.handle.toLowerCase().includes(q) ||
-      (post.location && post.location.toLowerCase().includes(q))
-    );
-  });
+  const filteredPosts = useMemo(() => {
+    return posts.filter(post => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        post.content.toLowerCase().includes(q) ||
+        post.author.name.toLowerCase().includes(q) ||
+        post.author.handle.toLowerCase().includes(q) ||
+        (post.location && post.location.toLowerCase().includes(q))
+      );
+    });
+  }, [posts, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-slate-800 flex flex-col font-sans selection:bg-[#FF3D71]/20 selection:text-[#FF3D71]">

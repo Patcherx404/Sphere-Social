@@ -17,10 +17,12 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  getDocs,
   collection, 
   onSnapshot,
   deleteDoc,
   updateDoc,
+  writeBatch,
   Firestore
 } from 'firebase/firestore';
 import defaultConfig from '../../firebase-applet-config.json';
@@ -82,10 +84,12 @@ export {
   doc, 
   setDoc, 
   getDoc, 
+  getDocs,
   collection, 
   onSnapshot,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  writeBatch
 };
 export type { FirebaseUser };
 

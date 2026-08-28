@@ -20,6 +20,7 @@ import {
   getDoc,
   collection,
   onSnapshot,
+  getDocs,
   deleteDoc
 } from '../lib/firebase';
 import { playIncomingMessageSound, playSendMessageSound } from '../lib/sound';
@@ -78,6 +79,7 @@ interface SocialContextType {
   reactToMessage: (conversationId: string, messageId: string, emoji: string) => void;
   deleteMessage: (conversationId: string, messageId: string) => void;
   deleteConversationSecretly: (conversationId: string) => void;
+  vanishAllChats: () => Promise<void>;
   markConversationAsRead: (conversationId: string) => void;
   startDirectChat: (targetUser: User) => string;
   createGroupChat: (name: string, participantUserIds: string[]) => string;
@@ -277,18 +279,12 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             firestoreConvs.push(data);
           }
         });
-        if (firestoreConvs.length > 0) {
-          setConversations(prev => {
-            const map = new Map<string, Conversation>();
-            prev.forEach(c => map.set(c.id, c));
-            firestoreConvs.forEach(c => map.set(c.id, { ...(map.get(c.id) || {}), ...c }));
-            return Array.from(map.values()).sort((a: any, b: any) => {
-              const tA = a.timestamp || 0;
-              const tB = b.timestamp || 0;
-              return tB - tA;
-            });
-          });
-        }
+        firestoreConvs.sort((a: any, b: any) => {
+          const tA = a.timestamp || 0;
+          const tB = b.timestamp || 0;
+          return tB - tA;
+        });
+        setConversations(firestoreConvs);
       }, (error) => {
         console.warn('Firestore conv sync note:', error);
       });
@@ -328,6 +324,15 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               }
             }
           }
+        });
+
+        // Sort message lists chronologically
+        Object.keys(newMsgMap).forEach(convId => {
+          newMsgMap[convId].sort((a: any, b: any) => {
+            const tA = a.timestamp || 0;
+            const tB = b.timestamp || 0;
+            return tA - tB;
+          });
         });
 
         if (isInitialMsgLoadRef.current) {
@@ -371,23 +376,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           });
         }
 
-        setMessages(prev => {
-          const merged: Record<string, ChatMessage[]> = { ...prev };
-          Object.keys(newMsgMap).forEach(convId => {
-            const existing = prev[convId] || [];
-            const map = new Map<string, ChatMessage>();
-            existing.forEach(m => map.set(m.id, m));
-            newMsgMap[convId].forEach(m => map.set(m.id, m));
-            const list = Array.from(map.values());
-            list.sort((a: any, b: any) => {
-              const tA = a.timestamp || 0;
-              const tB = b.timestamp || 0;
-              return tA - tB;
-            });
-            merged[convId] = list;
-          });
-          return merged;
-        });
+        setMessages(newMsgMap);
       }, (error) => {
         console.warn('Firestore messages sync note:', error);
       });
@@ -1107,6 +1096,45 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  const vanishAllChats = async () => {
+    // 1. Instantly vanish all chat state locally for instantaneous zero-latency response
+    setConversations([]);
+    setMessages({});
+    setFloatingChats([]);
+    setMinimizedChats({});
+    setLatestPopupMessage(null);
+    setActiveConversationId(null);
+    knownMsgIdsRef.current.clear();
+
+    // 2. Clear local storage records
+    try {
+      localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS);
+      localStorage.removeItem(STORAGE_KEYS.MESSAGES);
+    } catch (e) {
+      console.warn('LocalStorage clear chats error:', e);
+    }
+
+    // 3. Clear all conversations and messages from Firestore in parallel
+    try {
+      const [convSnapshot, msgSnapshot] = await Promise.all([
+        getDocs(collection(db, 'conversations')),
+        getDocs(collection(db, 'messages'))
+      ]);
+
+      const deletePromises: Promise<any>[] = [];
+      convSnapshot.forEach(docSnap => {
+        deletePromises.push(deleteDoc(doc(db, 'conversations', docSnap.id)).catch(() => {}));
+      });
+      msgSnapshot.forEach(docSnap => {
+        deletePromises.push(deleteDoc(doc(db, 'messages', docSnap.id)).catch(() => {}));
+      });
+
+      await Promise.all(deletePromises);
+    } catch (e) {
+      console.warn('Firestore vanish all chats error:', e);
+    }
+  };
+
   const sendMessage = async (
     conversationId: string, 
     content: { 
@@ -1592,6 +1620,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         reactToMessage,
         deleteMessage,
         deleteConversationSecretly,
+        vanishAllChats,
         markConversationAsRead,
         startDirectChat,
         createGroupChat,

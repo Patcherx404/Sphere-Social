@@ -24,6 +24,7 @@ export const Navbar: React.FC = () => {
     markNotificationAsRead,
     markAllNotificationsAsRead,
     conversations,
+    vanishAllChats,
     openFloatingChat,
     startDirectChat,
     setSelectedProfileUser,
