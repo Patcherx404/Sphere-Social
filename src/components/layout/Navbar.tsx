@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, MessageSquare, Bell, Compass, Users, Bookmark, 
   ChevronDown, Check, UserPlus, LogOut, X, ShieldCheck, 
-  UserCheck, Clock, MessageCircle, ExternalLink, Plus
+  UserCheck, Clock, MessageCircle, ExternalLink, Plus, User as UserIcon
 } from 'lucide-react';
 import { useSocial } from '../../context/SocialContext';
 import { User, ActiveTab } from '../../types';
@@ -14,6 +14,7 @@ export const Navbar: React.FC = () => {
     setCurrentUser,
     activeTab,
     setActiveTab,
+    setActiveConversationId,
     searchQuery,
     setSearchQuery,
     posts,
@@ -99,6 +100,7 @@ export const Navbar: React.FC = () => {
   });
 
   return (
+    <>
     <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 text-slate-800 shadow-xs transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
         
@@ -429,7 +431,7 @@ export const Navbar: React.FC = () => {
             </button>
 
             {isMessagesMenuOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-88 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-1.5rem)] max-w-sm sm:w-88 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
                   <span className="font-bold text-sm text-slate-900">Direct Chats</span>
                   <button 
@@ -520,7 +522,7 @@ export const Navbar: React.FC = () => {
             </button>
 
             {isNotifMenuOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-88 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-1.5rem)] max-w-sm sm:w-88 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
                   <span className="font-bold text-sm text-slate-900">Notifications</span>
                   {unreadNotificationsTotal > 0 && (
@@ -639,5 +641,84 @@ export const Navbar: React.FC = () => {
 
       </div>
     </header>
+
+    {/* Mobile Bottom Navigation Bar */}
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 py-1 flex items-center justify-around shadow-lg">
+      <button
+        onClick={() => {
+          setActiveTab('feed');
+          setActiveConversationId(null);
+        }}
+        className={`flex flex-col items-center justify-center p-1.5 rounded-xl cursor-pointer transition-colors ${
+          activeTab === 'feed' ? 'text-[#FF3D71]' : 'text-slate-500 hover:text-slate-800'
+        }`}
+      >
+        <Compass className="w-5 h-5" />
+        <span className="text-[10px] font-bold mt-0.5">Feed</span>
+      </button>
+
+      <button
+        onClick={() => {
+          setActiveTab('messenger');
+        }}
+        className={`relative flex flex-col items-center justify-center p-1.5 rounded-xl cursor-pointer transition-colors ${
+          activeTab === 'messenger' ? 'text-[#FF3D71]' : 'text-slate-500 hover:text-slate-800'
+        }`}
+      >
+        <MessageSquare className="w-5 h-5" />
+        {unreadMessagesTotal > 0 && (
+          <span className="absolute top-0.5 right-1.5 w-4 h-4 bg-[#FF3D71] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+            {unreadMessagesTotal}
+          </span>
+        )}
+        <span className="text-[10px] font-bold mt-0.5">Chats</span>
+      </button>
+
+      <button
+        onClick={() => {
+          setActiveTab('friends');
+          setActiveConversationId(null);
+        }}
+        className={`flex flex-col items-center justify-center p-1.5 rounded-xl cursor-pointer transition-colors ${
+          activeTab === 'friends' ? 'text-[#FF3D71]' : 'text-slate-500 hover:text-slate-800'
+        }`}
+      >
+        <Users className="w-5 h-5" />
+        <span className="text-[10px] font-bold mt-0.5">Friends</span>
+      </button>
+
+      <button
+        onClick={() => {
+          setActiveTab('saved');
+          setActiveConversationId(null);
+        }}
+        className={`flex flex-col items-center justify-center p-1.5 rounded-xl cursor-pointer transition-colors ${
+          activeTab === 'saved' ? 'text-[#FF3D71]' : 'text-slate-500 hover:text-slate-800'
+        }`}
+      >
+        <Bookmark className="w-5 h-5" />
+        <span className="text-[10px] font-bold mt-0.5">Saved</span>
+      </button>
+
+      <button
+        onClick={() => {
+          if (currentUser) setSelectedProfileUser(currentUser);
+        }}
+        className="flex flex-col items-center justify-center p-1.5 rounded-xl cursor-pointer text-slate-500 hover:text-slate-800"
+      >
+        {currentUser ? (
+          <img
+            src={currentUser.avatar}
+            alt={currentUser.name}
+            className="w-5 h-5 rounded-full object-cover border border-[#FF3D71]"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <UserIcon className="w-5 h-5" />
+        )}
+        <span className="text-[10px] font-bold mt-0.5">Me</span>
+      </button>
+    </nav>
+    </>
   );
 };

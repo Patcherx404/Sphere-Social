@@ -138,7 +138,7 @@ export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversa
   }
 
   return (
-    <div className="w-80 sm:w-88 h-[440px] bg-white border border-slate-200/90 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-150">
+    <div className="w-[calc(100vw-1.5rem)] sm:w-88 max-w-sm h-[400px] sm:h-[440px] bg-white border border-slate-200/90 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-150">
       
       {/* Window Header */}
       <div className="px-3.5 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between">

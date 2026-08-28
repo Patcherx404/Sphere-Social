@@ -37,7 +37,7 @@ const MainContent: React.FC = () => {
     <div className="min-h-screen bg-[#F7F9FC] text-slate-800 flex flex-col font-sans selection:bg-[#FF3D71]/20 selection:text-[#FF3D71]">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-6">
+      <main className={`flex-1 max-w-7xl w-full mx-auto ${activeTab === 'messenger' ? 'p-0 sm:px-6 sm:py-6' : 'px-3 sm:px-6 py-4 sm:py-6'}`}>
         {activeTab === 'messenger' ? (
           <FullMessenger />
         ) : activeTab === 'friends' ? (
