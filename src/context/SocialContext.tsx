@@ -76,6 +76,7 @@ interface SocialContextType {
   }) => void;
   reactToMessage: (conversationId: string, messageId: string, emoji: string) => void;
   deleteMessage: (conversationId: string, messageId: string) => void;
+  deleteConversationSecretly: (conversationId: string) => void;
   markConversationAsRead: (conversationId: string) => void;
   startDirectChat: (targetUser: User) => string;
   createGroupChat: (name: string, participantUserIds: string[]) => string;
@@ -957,6 +958,57 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  const deleteConversationSecretly = async (conversationId: string) => {
+    if (!currentUser) return;
+    const now = Date.now();
+
+    // 1. Optimistic state update: hide conversation for currentUser and record clear timestamp
+    setConversations(prev => prev.map(c => {
+      if (c.id !== conversationId) return c;
+      const currentDeleted = c.deletedForUserIds || [];
+      const updatedDeleted = currentDeleted.includes(currentUser.id)
+        ? currentDeleted
+        : [...currentDeleted, currentUser.id];
+      const updatedCleared = {
+        ...(c.clearedAtForUsers || {}),
+        [currentUser.id]: now
+      };
+      return {
+        ...c,
+        deletedForUserIds: updatedDeleted,
+        clearedAtForUsers: updatedCleared
+      };
+    }));
+
+    // Close floating chat
+    setFloatingChats(prev => prev.filter(id => id !== conversationId));
+
+    // Clear active conversation if currently open
+    setActiveConversationId(prev => (prev === conversationId ? null : prev));
+
+    // 2. Persist to Firestore
+    try {
+      const conv = conversations.find(c => c.id === conversationId);
+      if (conv) {
+        const currentDeleted = conv.deletedForUserIds || [];
+        const updatedDeleted = currentDeleted.includes(currentUser.id)
+          ? currentDeleted
+          : [...currentDeleted, currentUser.id];
+        const updatedCleared = {
+          ...(conv.clearedAtForUsers || {}),
+          [currentUser.id]: now
+        };
+        await setDoc(doc(db, 'conversations', conversationId), {
+          ...conv,
+          deletedForUserIds: updatedDeleted,
+          clearedAtForUsers: updatedCleared
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Firestore secret delete conv error:', e);
+    }
+  };
+
   const sendMessage = async (
     conversationId: string, 
     content: { 
@@ -1100,6 +1152,16 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
 
     if (existing) {
+      if (existing.deletedForUserIds?.includes(freshCurrentUser.id)) {
+        const updatedDeleted = (existing.deletedForUserIds || []).filter(id => id !== freshCurrentUser.id);
+        const updatedConv = { ...existing, deletedForUserIds: updatedDeleted };
+        setConversations(prev => prev.map(c => c.id === existing.id ? updatedConv : c));
+        try {
+          setDoc(doc(db, 'conversations', existing.id), { deletedForUserIds: updatedDeleted }, { merge: true });
+        } catch (e) {
+          console.warn('Restore conv on startDirectChat:', e);
+        }
+      }
       openFloatingChat(existing.id);
       setActiveConversationId(existing.id);
       markConversationAsRead(existing.id);
@@ -1410,6 +1472,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         sendMessage,
         reactToMessage,
         deleteMessage,
+        deleteConversationSecretly,
         markConversationAsRead,
         startDirectChat,
         createGroupChat,

@@ -99,6 +99,8 @@ export interface Conversation {
   unreadCount: number;
   updatedAt: string;
   typingUsers?: string[];
+  deletedForUserIds?: string[];
+  clearedAtForUsers?: Record<string, number>;
 }
 
 export type NotificationType = 

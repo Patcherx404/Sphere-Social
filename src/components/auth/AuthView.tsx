@@ -7,9 +7,7 @@ import { useSocial } from '../../context/SocialContext';
 export const AuthView: React.FC = () => {
   const { 
     loginWithGoogle, 
-    loginWithGoogleFirebase,
-    users, 
-    loginWithUserId 
+    loginWithGoogleFirebase
   } = useSocial();
 
   const [showManualGmail, setShowManualGmail] = useState(false);
@@ -199,53 +197,6 @@ export const AuthView: React.FC = () => {
               </form>
             )}
           </div>
-
-          {/* Quick Account Switcher for Saved / Connected Users */}
-          {users.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Previously Connected ({users.length})
-                </span>
-                <span className="text-[10px] text-slate-400">Quick sign in</span>
-              </div>
-
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {users.map(u => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => loginWithUserId(u.id)}
-                    className="w-full flex items-center justify-between p-2 rounded-xl bg-[#F7F9FC] hover:bg-[#FFF0F4] hover:border-[#FF3D71]/40 border border-slate-200/80 transition-all text-left group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <img
-                        src={u.avatar}
-                        alt={u.name}
-                        className="w-7 h-7 rounded-full object-cover border border-slate-200"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold text-slate-900 group-hover:text-[#FF3D71] truncate">
-                            {u.name}
-                          </span>
-                          {u.verified && <ShieldCheck className="w-3 h-3 text-[#3366FF] flex-shrink-0" />}
-                        </div>
-                        <span className="text-[10px] text-slate-400 block truncate">
-                          {u.email || `@${u.handle}`}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="text-[10px] font-bold text-[#FF3D71] px-2 py-0.5 rounded-lg bg-white border border-[#FFD0DE] group-hover:bg-[#FF3D71] group-hover:text-white transition-colors">
-                      Sign In
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
         </div>
 

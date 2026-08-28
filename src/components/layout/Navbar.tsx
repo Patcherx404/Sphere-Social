@@ -40,13 +40,11 @@ export const Navbar: React.FC = () => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isNotifMenuOpen, setIsNotifMenuOpen] = useState(false);
   const [isMessagesMenuOpen, setIsMessagesMenuOpen] = useState(false);
-  const [isUserSwitcherOpen, setIsUserSwitcherOpen] = useState(false);
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const msgRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
-  const switchRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on click outside
   useEffect(() => {
@@ -63,15 +61,20 @@ export const Navbar: React.FC = () => {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileMenuOpen(false);
       }
-      if (switchRef.current && !switchRef.current.contains(event.target as Node)) {
-        setIsUserSwitcherOpen(false);
-      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   if (!currentUser) return null;
+
+  const visibleConversations = conversations.filter(c => {
+    if (c.deletedForUserIds?.includes(currentUser.id)) return false;
+    if (c.participantIds && c.participantIds.length > 0 && !c.participantIds.includes(currentUser.id)) {
+      return false;
+    }
+    return true;
+  });
 
   // Search Results
   const trimmedQuery = searchQuery.trim().toLowerCase();
@@ -403,92 +406,9 @@ export const Navbar: React.FC = () => {
           </button>
         </nav>
 
-        {/* Right: Actions, Messages, Notifications, Account Switcher & Profile */}
+        {/* Right: Actions, Messages, Notifications & Profile */}
         <div className="flex items-center gap-2 sm:gap-2.5">
           
-          {/* Quick Switch Registered Account */}
-          <div className="relative" ref={switchRef}>
-            <button
-              onClick={() => setIsUserSwitcherOpen(!isUserSwitcherOpen)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#FFF0F4] border border-[#FFD0DE] hover:bg-[#FFE5ED] text-[#FF3D71] text-xs font-bold transition-all group cursor-pointer"
-              title="Switch user account"
-            >
-              <span className="w-2 h-2 rounded-full bg-[#00D68F] animate-pulse" />
-              <span className="hidden sm:inline">User:</span>
-              <span className="text-slate-900 max-w-[80px] truncate">{currentUser.name.split(' ')[0]}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#FF3D71] group-hover:translate-y-0.5 transition-transform" />
-            </button>
-
-            {isUserSwitcherOpen && (
-              <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Switch Account</span>
-                    <span className="text-[10px] px-2 py-0.5 bg-pink-100 text-[#FF3D71] rounded-full font-bold">
-                      {users.length} {users.length === 1 ? 'User' : 'Users'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                    Switch between accounts or register a new user to test real-time chat!
-                  </p>
-                </div>
-
-                <div className="space-y-1 max-h-64 overflow-y-auto">
-                  {users.map(user => {
-                    const isSelected = user.id === currentUser.id;
-                    return (
-                      <button
-                        key={user.id}
-                        onClick={() => {
-                          setCurrentUser(user);
-                          setIsUserSwitcherOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-colors cursor-pointer ${
-                          isSelected ? 'bg-[#FF3D71] text-white font-medium shadow-xs' : 'hover:bg-[#F0F4F8] text-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="relative flex-shrink-0">
-                            <img 
-                              src={user.avatar} 
-                              alt={user.name} 
-                              className="w-8 h-8 rounded-full object-cover border border-slate-200"
-                              referrerPolicy="no-referrer"
-                            />
-                            {user.isOnline && (
-                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#00D68F] border-2 border-white rounded-full" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold truncate">{user.name}</div>
-                            <div className={`text-[10px] truncate ${isSelected ? 'text-pink-100' : 'text-slate-400'}`}>
-                              @{user.handle} {user.email ? `• ${user.email}` : ''}
-                            </div>
-                          </div>
-                        </div>
-                        {isSelected && <Check className="w-4 h-4 text-white flex-shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Add new account button */}
-                <div className="mt-2 pt-2 border-t border-slate-100">
-                  <button
-                    onClick={() => {
-                      setIsUserSwitcherOpen(false);
-                      logout();
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#F7F9FC] hover:bg-[#FFF0F4] hover:text-[#FF3D71] text-slate-700 text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>Register or Sign in with Google</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Quick Messages Drawer Button */}
           <div className="relative" ref={msgRef}>
             <button
@@ -524,10 +444,10 @@ export const Navbar: React.FC = () => {
                 </div>
 
                 <div className="space-y-1 max-h-72 overflow-y-auto">
-                  {conversations.length === 0 ? (
+                  {visibleConversations.length === 0 ? (
                     <p className="text-xs text-slate-400 py-4 text-center">No active chats yet. Search a friend to start chatting!</p>
                   ) : (
-                    conversations.map(conv => {
+                    visibleConversations.map(conv => {
                       const otherUser = conv.isGroup 
                         ? null 
                         : conv.participants.find(p => p.id !== currentUser.id) || conv.participants[0];

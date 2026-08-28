@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, Phone, Video, Info, Image, Smile, Mic, Send, 
   MoreVertical, CheckCheck, Play, Pause, Plus, Users, 
-  Trash2, ShieldCheck, Heart, ThumbsUp, Flame, ChevronRight, X
+  Trash2, ShieldCheck, Heart, ThumbsUp, Flame, ChevronRight, X,
+  EyeOff, Lock, AlertTriangle
 } from 'lucide-react';
 import { useSocial } from '../../context/SocialContext';
 import { Conversation, ChatMessage, User } from '../../types';
@@ -17,6 +18,7 @@ export const FullMessenger: React.FC = () => {
     setActiveConversationId, 
     sendMessage, 
     reactToMessage, 
+    deleteConversationSecretly,
     startDirectChat,
     createGroupChat,
     startCall,
@@ -36,13 +38,33 @@ export const FullMessenger: React.FC = () => {
   const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([]);
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [userPickerSearch, setUserPickerSearch] = useState('');
+  const [secretDeleteTargetConv, setSecretDeleteTargetConv] = useState<Conversation | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const filteredConversations = conversations.filter(c => {
+    if (!currentUser) return false;
+    if (c.deletedForUserIds?.includes(currentUser.id)) return false;
+    if (c.participantIds && c.participantIds.length > 0 && !c.participantIds.includes(currentUser.id)) {
+      return false;
+    }
+    if (!searchFilter.trim()) return true;
+    const searchLower = searchFilter.toLowerCase();
+    if (c.isGroup) {
+      return c.name?.toLowerCase().includes(searchLower);
+    }
+    const other = c.participants.find(p => p.id !== currentUser?.id);
+    const resolvedOther = other ? (users.find(u => u.id === other.id) || other) : null;
+    return resolvedOther?.name.toLowerCase().includes(searchLower) || resolvedOther?.handle.toLowerCase().includes(searchLower);
+  });
+
   // Set default active conversation if none selected
-  const activeId = activeConversationId || (conversations.length > 0 ? conversations[0].id : null);
+  const activeId = activeConversationId || (filteredConversations.length > 0 ? filteredConversations[0].id : null);
   const activeConversation = conversations.find(c => c.id === activeId);
-  const currentMessages = activeId ? messages[activeId] || [] : [];
+
+  const clearTimestamp = (currentUser && activeConversation?.clearedAtForUsers?.[currentUser.id]) || 0;
+  const rawMessages = activeId ? messages[activeId] || [] : [];
+  const currentMessages = rawMessages.filter(m => (m.timestamp || 0) >= clearTimestamp);
 
   const getResolvedParticipant = (p: User) => {
     return users.find(u => u.id === p.id) || p;
@@ -72,20 +94,14 @@ export const FullMessenger: React.FC = () => {
     return () => clearInterval(timer);
   }, [isRecordingVoice]);
 
-  const filteredConversations = conversations.filter(c => {
-    // Only show conversations that the current user belongs to (or all if not yet assigned)
-    if (currentUser && c.participantIds && c.participantIds.length > 0 && !c.participantIds.includes(currentUser.id)) {
-      return false;
+  const handleConfirmSecretDelete = () => {
+    if (!secretDeleteTargetConv) return;
+    deleteConversationSecretly(secretDeleteTargetConv.id);
+    if (activeId === secretDeleteTargetConv.id) {
+      setActiveConversationId(null);
     }
-    if (!searchFilter.trim()) return true;
-    const searchLower = searchFilter.toLowerCase();
-    if (c.isGroup) {
-      return c.name?.toLowerCase().includes(searchLower);
-    }
-    const other = c.participants.find(p => p.id !== currentUser?.id);
-    const resolvedOther = other ? getResolvedParticipant(other) : null;
-    return resolvedOther?.name.toLowerCase().includes(searchLower) || resolvedOther?.handle.toLowerCase().includes(searchLower);
-  });
+    setSecretDeleteTargetConv(null);
+  };
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -186,7 +202,7 @@ export const FullMessenger: React.FC = () => {
                 <div
                   key={conv.id}
                   onClick={() => setActiveConversationId(conv.id)}
-                  className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all ${
+                  className={`group/conv flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all relative ${
                     isSelected 
                       ? 'bg-[#FFF0F4] border border-[#FF3D71]/30' 
                       : 'hover:bg-[#F7F9FC] border border-transparent'
@@ -219,11 +235,25 @@ export const FullMessenger: React.FC = () => {
                     </p>
                   </div>
 
-                  {conv.unreadCount > 0 && (
-                    <span className="w-5 h-5 bg-[#FF3D71] text-white rounded-full text-[10px] font-bold flex items-center justify-center">
-                      {conv.unreadCount}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {conv.unreadCount > 0 && (
+                      <span className="w-5 h-5 bg-[#FF3D71] text-white rounded-full text-[10px] font-bold flex items-center justify-center">
+                        {conv.unreadCount}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSecretDeleteTargetConv(conv);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover/conv:opacity-100 transition-all cursor-pointer"
+                      title="Delete conversation secretly (only for me)"
+                    >
+                      <EyeOff className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               );
             })
@@ -270,6 +300,15 @@ export const FullMessenger: React.FC = () => {
 
             {/* Actions */}
             <div className="flex items-center gap-2 text-slate-600">
+              <button
+                onClick={() => setSecretDeleteTargetConv(activeConversation)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 hover:text-red-600 hover:border-red-200 border border-slate-200 text-slate-600 text-xs font-bold transition-colors cursor-pointer"
+                title="Delete conversation secretly (only for you)"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Delete Secretly</span>
+              </button>
+
               <button
                 onClick={() => startCall(activeConversation.id, false)}
                 className="p-2 rounded-xl bg-[#F7F9FC] hover:bg-[#F0F4F8] hover:text-slate-900 border border-slate-200 transition-colors cursor-pointer"
@@ -577,6 +616,24 @@ export const FullMessenger: React.FC = () => {
             </div>
           </div>
 
+          {/* Privacy & Secret Conversation Actions */}
+          <div className="p-3 bg-red-50/70 border border-red-100 rounded-2xl space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-red-700">
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>Privacy & Deletion</span>
+            </div>
+            <p className="text-[11px] text-red-600/90 leading-tight">
+              Delete this entire conversation secretly from your feed only.
+            </p>
+            <button
+              onClick={() => setSecretDeleteTargetConv(activeConversation)}
+              className="w-full py-2 px-3 bg-white hover:bg-red-600 text-red-600 hover:text-white border border-red-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Conversation Secretly</span>
+            </button>
+          </div>
+
           {/* Privacy & Encryption notice */}
           <div className="mt-auto pt-4 border-t border-slate-200 text-[11px] text-slate-500 space-y-1">
             <div className="flex items-center gap-1 text-[#00D68F] font-bold">
@@ -584,6 +641,53 @@ export const FullMessenger: React.FC = () => {
               <span>Sphere Secure Messaging</span>
             </div>
             <p className="font-normal text-slate-400">Direct messages on Sphere are secure and private between users.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Secret Delete Confirmation Modal */}
+      {secretDeleteTargetConv && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center mx-auto">
+              <EyeOff className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="font-extrabold text-lg text-slate-900">Delete Conversation Secretly?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+                This will delete and permanently remove this chat from <span className="font-bold text-slate-800">your</span> inbox and history.
+              </p>
+            </div>
+
+            <div className="p-3 bg-[#F7F9FC] border border-slate-200/80 rounded-2xl text-xs text-slate-600 space-y-2">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <span><strong>No notifications:</strong> The other participant will not be informed.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Lock className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                <span><strong>Independent history:</strong> Their copy of the chat remains untouched.</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSecretDeleteTargetConv(null)}
+                className="py-2.5 px-4 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSecretDelete}
+                className="py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Secretly</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

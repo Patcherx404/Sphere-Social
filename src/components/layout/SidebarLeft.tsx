@@ -30,7 +30,11 @@ export const SidebarLeft: React.FC = () => {
     setIsNewGroupModalOpen(false);
   };
 
-  const groupConversations = conversations.filter(c => c.isGroup);
+  const groupConversations = conversations.filter(c => 
+    c.isGroup && 
+    !c.deletedForUserIds?.includes(currentUser.id) &&
+    (!c.participantIds?.length || c.participantIds.includes(currentUser.id))
+  );
 
   return (
     <aside className="w-64 flex-shrink-0 hidden lg:block space-y-4">
