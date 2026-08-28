@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   User, Post, Conversation, ChatMessage, AppNotification, 
   FriendRequest, ReactionType, ActiveTab, FriendStatusType 
@@ -22,6 +22,7 @@ import {
   onSnapshot,
   deleteDoc
 } from '../lib/firebase';
+import { playIncomingMessageSound, playSendMessageSound } from '../lib/sound';
 
 interface SocialContextType {
   currentUser: User | null;
@@ -81,6 +82,17 @@ interface SocialContextType {
   startDirectChat: (targetUser: User) => string;
   createGroupChat: (name: string, participantUserIds: string[]) => string;
   unreadMessagesTotal: number;
+  latestPopupMessage: {
+    conversationId: string;
+    messageId: string;
+    senderName: string;
+    senderAvatar: string;
+    text?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    timestamp: number;
+  } | null;
+  dismissLatestPopupMessage: () => void;
   
   // Notifications
   notifications: AppNotification[];
@@ -183,6 +195,20 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [floatingChats, setFloatingChats] = useState<string[]>([]);
   const [minimizedChats, setMinimizedChats] = useState<Record<string, boolean>>({});
+  const [latestPopupMessage, setLatestPopupMessage] = useState<{
+    conversationId: string;
+    messageId: string;
+    senderName: string;
+    senderAvatar: string;
+    text?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    timestamp: number;
+  } | null>(null);
+
+  const dismissLatestPopupMessage = () => setLatestPopupMessage(null);
+  const knownMsgIdsRef = useRef<Set<string>>(new Set());
+  const isInitialMsgLoadRef = useRef<boolean>(true);
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
@@ -278,6 +304,8 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const msgColRef = collection(db, 'messages');
       const unsubscribe = onSnapshot(msgColRef, (snapshot) => {
         const newMsgMap: Record<string, ChatMessage[]> = {};
+        const incomingNewMessages: ChatMessage[] = [];
+
         snapshot.forEach(docSnap => {
           const data = docSnap.data() as ChatMessage & { timestamp?: number };
           if (data && data.id && data.conversationId) {
@@ -292,8 +320,56 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               newMsgMap[data.conversationId] = [];
             }
             newMsgMap[data.conversationId].push(msgItem);
+
+            if (!knownMsgIdsRef.current.has(data.id)) {
+              knownMsgIdsRef.current.add(data.id);
+              if (!isInitialMsgLoadRef.current) {
+                incomingNewMessages.push(msgItem);
+              }
+            }
           }
         });
+
+        if (isInitialMsgLoadRef.current) {
+          isInitialMsgLoadRef.current = false;
+        } else if (incomingNewMessages.length > 0) {
+          incomingNewMessages.forEach(incomingMsg => {
+            if (currentUser && incomingMsg.senderId !== currentUser.id) {
+              // Unhide conversation if deleted
+              setConversations(prev => prev.map(c => {
+                if (c.id === incomingMsg.conversationId && c.deletedForUserIds?.includes(currentUser.id)) {
+                  return {
+                    ...c,
+                    deletedForUserIds: (c.deletedForUserIds || []).filter(id => id !== currentUser.id)
+                  };
+                }
+                return c;
+              }));
+
+              // Automatically pop up Chat Head if not already floating
+              setFloatingChats(prev => {
+                if (prev.includes(incomingMsg.conversationId)) return prev;
+                return [...prev.slice(-2), incomingMsg.conversationId];
+              });
+
+              // Play chime
+              playIncomingMessageSound();
+
+              // Trigger chat head speech bubble preview toast
+              const senderUser = users.find(u => u.id === incomingMsg.senderId);
+              setLatestPopupMessage({
+                conversationId: incomingMsg.conversationId,
+                messageId: incomingMsg.id,
+                senderName: senderUser?.name || 'Someone',
+                senderAvatar: senderUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+                text: incomingMsg.text,
+                mediaUrl: incomingMsg.mediaUrl,
+                mediaType: incomingMsg.mediaType,
+                timestamp: Date.now()
+              });
+            }
+          });
+        }
 
         setMessages(prev => {
           const merged: Record<string, ChatMessage[]> = { ...prev };
@@ -319,7 +395,7 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch (e) {
       console.warn('Firestore messages listener initialization:', e);
     }
-  }, []);
+  }, [currentUser, users]);
 
   // 4. Real-time Firestore POSTS listener
   useEffect(() => {
@@ -1065,6 +1141,10 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     // 1. Optimistic local update
+    playSendMessageSound();
+    if (latestPopupMessage?.conversationId === conversationId) {
+      dismissLatestPopupMessage();
+    }
     setMessages(prev => ({
       ...prev,
       [conversationId]: [...(prev[conversationId] || []), newMessage]
@@ -1516,6 +1596,8 @@ export const SocialProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         startDirectChat,
         createGroupChat,
         unreadMessagesTotal,
+        latestPopupMessage,
+        dismissLatestPopupMessage,
         notifications,
         markNotificationAsRead,
         markAllNotificationsAsRead,
