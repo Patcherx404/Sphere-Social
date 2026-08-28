@@ -450,10 +450,12 @@ export const Navbar: React.FC = () => {
                     <p className="text-xs text-slate-400 py-4 text-center">No active chats yet. Search a friend to start chatting!</p>
                   ) : (
                     visibleConversations.map(conv => {
-                      const otherUser = conv.isGroup 
-                        ? null 
-                        : conv.participants.find(p => p.id !== currentUser.id) || conv.participants[0];
-                      const title = conv.isGroup ? conv.name : otherUser?.name;
+                      const pIds = (conv.participantIds && conv.participantIds.length > 0)
+                        ? conv.participantIds
+                        : (conv.participants || []).map(p => p?.id).filter(Boolean);
+                      const otherId = pIds.find(id => id !== currentUser.id) || pIds[0];
+                      const otherUser = otherId ? users.find(u => u.id === otherId) || conv.participants?.find(p => p.id === otherId) : null;
+                      const title = conv.isGroup ? (conv.name || 'Group Chat') : otherUser?.name || 'Direct Chat';
                       const avatar = conv.isGroup ? conv.avatar : otherUser?.avatar;
                       const isOnline = otherUser?.isOnline;
 

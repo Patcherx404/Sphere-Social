@@ -55,13 +55,45 @@ export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversa
   const quickInputRef = useRef<HTMLInputElement>(null);
   const isMinimized = minimizedChats[conversationId];
 
-  const otherUserRaw = conversation?.isGroup 
+  const getParticipantIds = (c?: Conversation | null): string[] => {
+    if (!c) return [];
+    if (Array.isArray(c.participantIds) && c.participantIds.length > 0) return c.participantIds;
+    if (Array.isArray(c.participants) && c.participants.length > 0) return c.participants.map(p => p?.id).filter(Boolean);
+    return [];
+  };
+
+  const getResolvedParticipants = (c?: Conversation | null): any[] => {
+    if (!c) return [];
+    const pIds = getParticipantIds(c);
+    if (pIds.length > 0) {
+      return pIds.map(id => {
+        const u = users.find(user => user.id === id);
+        if (u) return u;
+        const cached = c.participants?.find(p => p?.id === id);
+        if (cached) return cached;
+        return {
+          id,
+          name: 'Sphere Member',
+          handle: id.slice(0, 8),
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+          coverPhoto: '',
+          bio: '',
+          joinedDate: '',
+          isOnline: false,
+          friendsCount: 0,
+          followersCount: 0
+        };
+      });
+    }
+    return Array.isArray(c.participants) ? c.participants : [];
+  };
+
+  const resolvedParticipants = getResolvedParticipants(conversation);
+  const otherUser = conversation?.isGroup 
     ? null 
-    : conversation?.participants.find(p => p.id !== currentUser?.id) || conversation?.participants[0];
+    : resolvedParticipants.find(p => p.id !== currentUser?.id) || resolvedParticipants[0] || null;
 
-  const otherUser = otherUserRaw ? (users.find(u => u.id === otherUserRaw.id) || otherUserRaw) : null;
-
-  const title = conversation?.isGroup ? conversation.name : otherUser?.name || 'Chat';
+  const title = conversation?.isGroup ? (conversation.name || 'Group Chat') : otherUser?.name || 'Chat';
   const avatar = conversation?.isGroup ? conversation.avatar : otherUser?.avatar;
   const isOnline = otherUser?.isOnline;
 
@@ -458,9 +490,9 @@ export const FloatingChatWindow: React.FC<FloatingChatWindowProps> = ({ conversa
                 className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}
               >
                 <div className="flex items-end gap-1.5 max-w-[85%]">
-                  {!isMe && (
+                    {!isMe && (
                     <img
-                      src={conversation.participants.find(p => p.id === msg.senderId)?.avatar || otherUser?.avatar}
+                      src={resolvedParticipants.find(p => p.id === msg.senderId)?.avatar || otherUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                       alt="Avatar"
                       className="w-6 h-6 rounded-full object-cover border border-slate-200 mb-1"
                       referrerPolicy="no-referrer"

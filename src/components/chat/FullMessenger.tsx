@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Search, Phone, Video, Info, Image, Smile, Mic, Send, 
   MoreVertical, CheckCheck, Play, Pause, Plus, Users, 
   Trash2, ShieldCheck, Heart, ThumbsUp, Flame, ChevronRight, X,
-  EyeOff, Lock, AlertTriangle, ArrowLeft
+  EyeOff, Lock, AlertTriangle, ArrowLeft, MessageSquare, Sparkles, CornerDownRight
 } from 'lucide-react';
 import { useSocial } from '../../context/SocialContext';
 import { Conversation, ChatMessage, User } from '../../types';
@@ -29,6 +29,7 @@ export const FullMessenger: React.FC = () => {
   const [inputVal, setInputVal] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -41,46 +42,120 @@ export const FullMessenger: React.FC = () => {
   const [secretDeleteTargetConv, setSecretDeleteTargetConv] = useState<Conversation | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const filteredConversations = conversations.filter(c => {
-    if (!currentUser) return false;
-    if (c.deletedForUserIds?.includes(currentUser.id) && c.id !== activeConversationId) return false;
-    if (c.participantIds && c.participantIds.length > 0 && !c.participantIds.includes(currentUser.id)) {
-      return false;
+  // Helper to extract participant IDs safely
+  const getParticipantIds = (c?: Conversation | null): string[] => {
+    if (!c) return [];
+    if (Array.isArray(c.participantIds) && c.participantIds.length > 0) {
+      return c.participantIds;
     }
-    if (!searchFilter.trim()) return true;
-    const searchLower = searchFilter.toLowerCase();
-    if (c.isGroup) {
-      return c.name?.toLowerCase().includes(searchLower);
+    if (Array.isArray(c.participants) && c.participants.length > 0) {
+      return c.participants.map(p => p?.id).filter(Boolean);
     }
-    const other = c.participants.find(p => p.id !== currentUser?.id);
-    const resolvedOther = other ? (users.find(u => u.id === other.id) || other) : null;
-    return resolvedOther?.name.toLowerCase().includes(searchLower) || resolvedOther?.handle.toLowerCase().includes(searchLower);
-  });
-
-  // Set default active conversation if none selected
-  const activeId = activeConversationId || (filteredConversations.length > 0 ? filteredConversations[0].id : null);
-  const activeConversation = conversations.find(c => c.id === activeId);
-
-  const clearTimestamp = (currentUser && activeConversation?.clearedAtForUsers?.[currentUser.id]) || 0;
-  const rawMessages = activeId ? messages[activeId] || [] : [];
-  const currentMessages = rawMessages.filter(m => {
-    if (!clearTimestamp) return true;
-    const msgTs = typeof m.timestamp === 'number' && !isNaN(m.timestamp) ? m.timestamp : 0;
-    return msgTs >= clearTimestamp;
-  });
-
-  const getResolvedParticipant = (p: User) => {
-    return users.find(u => u.id === p.id) || p;
+    return [];
   };
 
-  const otherUserRaw = activeConversation?.isGroup 
-    ? null 
-    : activeConversation?.participants.find(p => p.id !== currentUser?.id) || activeConversation?.participants[0];
-  const otherUser = otherUserRaw ? getResolvedParticipant(otherUserRaw) : null;
+  // Helper to resolve fresh participant User objects
+  const getResolvedParticipants = (c?: Conversation | null): User[] => {
+    if (!c) return [];
+    const pIds = getParticipantIds(c);
+    if (pIds.length > 0) {
+      return pIds.map(id => {
+        const u = users.find(user => user.id === id);
+        if (u) return u;
+        const cached = c.participants?.find(p => p?.id === id);
+        if (cached) return cached;
+        return {
+          id,
+          name: 'Sphere User',
+          handle: id.slice(0, 8),
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+          coverPhoto: '',
+          bio: '',
+          joinedDate: '',
+          isOnline: false,
+          friendsCount: 0,
+          followersCount: 0
+        };
+      });
+    }
+    return Array.isArray(c.participants) ? c.participants : [];
+  };
 
-  const title = activeConversation?.isGroup ? activeConversation.name : otherUser?.name || 'Messenger';
-  const avatar = activeConversation?.isGroup ? activeConversation.avatar : otherUser?.avatar;
+  // Helper to get the other participant in a 1-on-1 chat
+  const getOtherUser = (c?: Conversation | null, currentUserId?: string | null): User | null => {
+    if (!c || c.isGroup) return null;
+    const resolved = getResolvedParticipants(c);
+    const other = resolved.find(p => p.id !== currentUserId) || resolved[0];
+    if (other) {
+      const live = users.find(u => u.id === other.id);
+      return live || other;
+    }
+    return null;
+  };
+
+  // Filter conversations for current user
+  const filteredConversations = useMemo(() => {
+    return conversations.filter(c => {
+      if (!currentUser) return false;
+      // If secretly deleted by me and not active, hide from list
+      if (c.deletedForUserIds?.includes(currentUser.id) && c.id !== activeConversationId) {
+        return false;
+      }
+      
+      const pIds = getParticipantIds(c);
+      if (pIds.length > 0 && !pIds.includes(currentUser.id)) {
+        return false;
+      }
+
+      if (!searchFilter.trim()) return true;
+      const searchLower = searchFilter.toLowerCase();
+      if (c.isGroup) {
+        return (c.name || '').toLowerCase().includes(searchLower);
+      }
+      const other = getOtherUser(c, currentUser.id);
+      return (
+        (other?.name || '').toLowerCase().includes(searchLower) || 
+        (other?.handle || '').toLowerCase().includes(searchLower)
+      );
+    });
+  }, [conversations, currentUser, activeConversationId, searchFilter, users]);
+
+  // Determine active conversation:
+  // On desktop, if activeConversationId is not specified, default to first conversation if available.
+  const activeConversation = useMemo(() => {
+    if (activeConversationId) {
+      return conversations.find(c => c.id === activeConversationId) || null;
+    }
+    return null;
+  }, [conversations, activeConversationId]);
+
+  // Fallback active conversation for desktop view if none selected
+  const desktopPreviewConversation = useMemo(() => {
+    if (activeConversation) return activeConversation;
+    if (filteredConversations.length > 0) return filteredConversations[0];
+    return null;
+  }, [activeConversation, filteredConversations]);
+
+  const effectiveActiveConv = activeConversation || desktopPreviewConversation;
+  const activeId = effectiveActiveConv?.id || null;
+
+  const clearTimestamp = (currentUser && effectiveActiveConv?.clearedAtForUsers?.[currentUser.id]) || 0;
+  const rawMessages = activeId ? messages[activeId] || [] : [];
+  const currentMessages = useMemo(() => {
+    return rawMessages.filter(m => {
+      if (!clearTimestamp) return true;
+      const msgTs = typeof m.timestamp === 'number' && !isNaN(m.timestamp) ? m.timestamp : 0;
+      return msgTs >= clearTimestamp;
+    });
+  }, [rawMessages, clearTimestamp]);
+
+  const activeResolvedParticipants = getResolvedParticipants(effectiveActiveConv);
+  const otherUser = getOtherUser(effectiveActiveConv, currentUser?.id);
+
+  const title = effectiveActiveConv?.isGroup ? (effectiveActiveConv.name || 'Group Chat') : otherUser?.name || 'Messenger';
+  const avatar = effectiveActiveConv?.isGroup ? effectiveActiveConv.avatar : otherUser?.avatar;
   const isOnline = otherUser?.isOnline;
 
   useEffect(() => {
@@ -101,7 +176,7 @@ export const FullMessenger: React.FC = () => {
   const handleConfirmSecretDelete = () => {
     if (!secretDeleteTargetConv) return;
     deleteConversationSecretly(secretDeleteTargetConv.id);
-    if (activeId === secretDeleteTargetConv.id) {
+    if (activeConversationId === secretDeleteTargetConv.id) {
       setActiveConversationId(null);
     }
     setSecretDeleteTargetConv(null);
@@ -120,13 +195,14 @@ export const FullMessenger: React.FC = () => {
     setInputVal('');
     setImageUrl('');
     setShowImagePicker(false);
+    setShowEmojiPicker(false);
   };
 
   const handleSendVoiceNote = () => {
     if (!activeId) return;
     setIsRecordingVoice(false);
     sendMessage(activeId, {
-      text: '🎵 Audio message',
+      text: '🎵 Audio voice note',
       mediaType: 'audio',
       audioDuration: Math.max(3, recordSeconds)
     });
@@ -143,19 +219,32 @@ export const FullMessenger: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100dvh-4.2rem)] sm:h-[calc(100vh-5rem)] max-w-7xl mx-auto bg-white border-0 sm:border border-slate-200/80 rounded-none sm:rounded-3xl overflow-hidden shadow-none sm:shadow-xl flex w-full">
+    <div id="full-messenger-container" className="h-[calc(100dvh-4.2rem)] sm:h-[calc(100vh-5rem)] max-w-7xl mx-auto bg-white border-0 sm:border border-slate-200/80 rounded-none sm:rounded-3xl overflow-hidden shadow-none sm:shadow-xl flex w-full">
       
       {/* Left Sidebar: Conversations List */}
-      <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200 flex-col bg-white ${
-        activeConversation ? 'hidden md:flex' : 'flex'
-      }`}>
+      {/* On mobile (< md): visible ONLY when no active conversation is selected */}
+      {/* On desktop (>= md): always visible */}
+      <div 
+        id="messenger-sidebar"
+        className={`w-full md:w-80 lg:w-96 border-r border-slate-200 flex-col bg-white flex-shrink-0 ${
+          activeConversationId ? 'hidden md:flex' : 'flex'
+        }`}
+      >
         
         {/* Header & Search */}
         <div className="p-3 sm:p-4 border-b border-slate-200 space-y-2.5">
           <div className="flex items-center justify-between">
-            <h2 className="font-extrabold text-base sm:text-lg text-slate-900 tracking-tight">Messages</h2>
+            <h2 className="font-extrabold text-base sm:text-lg text-slate-900 tracking-tight flex items-center gap-2">
+              <span>Messages</span>
+              {filteredConversations.length > 0 && (
+                <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-full">
+                  {filteredConversations.length}
+                </span>
+              )}
+            </h2>
             <div className="flex items-center gap-1.5">
               <button
+                id="btn-new-chat"
                 onClick={() => {
                   setUserPickerSearch('');
                   setIsNewChatModalOpen(true);
@@ -167,6 +256,7 @@ export const FullMessenger: React.FC = () => {
                 <span>Chat</span>
               </button>
               <button
+                id="btn-new-group"
                 onClick={() => setIsNewGroupModalOpen(true)}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#F0F4F8] hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
                 title="Create Group"
@@ -180,6 +270,7 @@ export const FullMessenger: React.FC = () => {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
+              id="input-messenger-search"
               type="text"
               placeholder="Search conversations..."
               value={searchFilter}
@@ -190,22 +281,32 @@ export const FullMessenger: React.FC = () => {
         </div>
 
         {/* Conversation List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div id="messenger-conv-list" className="flex-1 overflow-y-auto p-2 space-y-1">
           {filteredConversations.length === 0 ? (
-            <div className="p-6 text-center text-slate-400 text-xs">
-              No conversations found.
+            <div className="p-8 text-center text-slate-400 flex flex-col items-center justify-center">
+              <div className="w-12 h-12 rounded-2xl bg-[#F7F9FC] border border-slate-200 flex items-center justify-center mb-3">
+                <MessageSquare className="w-6 h-6 text-[#FF3D71]" />
+              </div>
+              <p className="text-xs font-bold text-slate-700">No conversations yet</p>
+              <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">Start a conversation by tapping New Chat above.</p>
+              <button
+                onClick={() => setIsNewChatModalOpen(true)}
+                className="mt-4 px-3 py-1.5 bg-[#FF3D71] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#e03161] transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Start New Chat</span>
+              </button>
             </div>
           ) : (
             filteredConversations.map(conv => {
-              const other = conv.isGroup 
-                ? null 
-                : conv.participants.find(p => p.id !== currentUser.id) || conv.participants[0];
-              const convTitle = conv.isGroup ? conv.name : other?.name;
+              const other = getOtherUser(conv, currentUser?.id);
+              const convTitle = conv.isGroup ? (conv.name || 'Group Chat') : other?.name || 'Direct Chat';
               const convAvatar = conv.isGroup ? conv.avatar : other?.avatar;
               const isSelected = conv.id === activeId;
 
               return (
                 <div
+                  id={`conv-item-${conv.id}`}
                   key={conv.id}
                   onClick={() => setActiveConversationId(conv.id)}
                   className={`group/conv flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all relative ${
@@ -229,14 +330,14 @@ export const FullMessenger: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">{convTitle}</span>
-                      <span className="text-[10px] text-slate-400 flex-shrink-0 font-medium">{conv.updatedAt}</span>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0 font-medium">{conv.updatedAt || 'Recently'}</span>
                     </div>
 
                     <p className="text-xs text-slate-500 truncate">
                       {conv.typingUsers && conv.typingUsers.length > 0 ? (
                         <span className="text-[#FF3D71] font-semibold italic animate-pulse">Typing...</span>
                       ) : (
-                        conv.lastMessage?.text || (conv.lastMessage?.mediaUrl ? '📷 Photo attachment' : 'No messages yet')
+                        conv.lastMessage?.text || (conv.lastMessage?.mediaUrl ? '📷 Photo attachment' : (conv.lastMessage?.mediaType === 'audio' ? '🎵 Voice note' : 'No messages yet'))
                       )}
                     </p>
                   </div>
@@ -268,16 +369,22 @@ export const FullMessenger: React.FC = () => {
       </div>
 
       {/* Main Conversation Area */}
-      {activeConversation ? (
-        <div className={`flex-1 flex flex-col bg-[#F7F9FC] w-full ${
-          !activeConversationId ? 'hidden md:flex' : 'flex'
-        }`}>
+      {/* On mobile (< md): visible ONLY when an active conversation is selected */}
+      {/* On desktop (>= md): always visible */}
+      {effectiveActiveConv ? (
+        <div 
+          id="messenger-chat-pane"
+          className={`flex-1 flex flex-col bg-[#F7F9FC] w-full min-w-0 ${
+            !activeConversationId ? 'hidden md:flex' : 'flex'
+          }`}
+        >
           
           {/* Header */}
           <div className="h-14 sm:h-16 px-3 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-white backdrop-blur-xs flex-shrink-0">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               {/* Mobile Back Button to conversation list */}
               <button
+                id="btn-messenger-back"
                 onClick={() => setActiveConversationId(null)}
                 className="md:hidden p-2 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-700 transition-colors flex-shrink-0 cursor-pointer"
                 title="Back to conversations"
@@ -307,8 +414,8 @@ export const FullMessenger: React.FC = () => {
                     {otherUser?.verified && <ShieldCheck className="w-3.5 h-3.5 text-[#3366FF] flex-shrink-0" />}
                   </h3>
                   <span className="text-[10px] sm:text-[11px] text-slate-400 block font-medium truncate">
-                    {activeConversation.isGroup 
-                      ? `${activeConversation.participants.length} participants` 
+                    {effectiveActiveConv.isGroup 
+                      ? `${activeResolvedParticipants.length} participants` 
                       : isOnline ? 'Active now' : 'Offline'}
                   </span>
                 </div>
@@ -318,7 +425,7 @@ export const FullMessenger: React.FC = () => {
             {/* Actions */}
             <div className="flex items-center gap-1 sm:gap-2 text-slate-600 flex-shrink-0">
               <button
-                onClick={() => setSecretDeleteTargetConv(activeConversation)}
+                onClick={() => setSecretDeleteTargetConv(effectiveActiveConv)}
                 className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 hover:text-red-600 hover:border-red-200 border border-slate-200 text-slate-600 text-xs font-bold transition-colors cursor-pointer"
                 title="Delete conversation secretly (only for you)"
               >
@@ -327,7 +434,7 @@ export const FullMessenger: React.FC = () => {
               </button>
 
               <button
-                onClick={() => startCall(activeConversation.id, false)}
+                onClick={() => startCall(effectiveActiveConv.id, false)}
                 className="p-2 rounded-xl bg-[#F7F9FC] hover:bg-[#F0F4F8] hover:text-slate-900 border border-slate-200 transition-colors cursor-pointer"
                 title="Voice Call"
               >
@@ -335,7 +442,7 @@ export const FullMessenger: React.FC = () => {
               </button>
 
               <button
-                onClick={() => startCall(activeConversation.id, true)}
+                onClick={() => startCall(effectiveActiveConv.id, true)}
                 className="p-2 rounded-xl bg-[#F7F9FC] hover:bg-[#F0F4F8] hover:text-slate-900 border border-slate-200 transition-colors cursor-pointer"
                 title="Video Call"
               >
@@ -358,18 +465,23 @@ export const FullMessenger: React.FC = () => {
           <div className="flex-1 p-3 sm:p-6 overflow-y-auto space-y-3 sm:space-y-4">
             {currentMessages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
-                <img src={avatar} alt={title} className="w-16 h-16 rounded-full object-cover mb-3 border-2 border-[#FF3D71]/40" />
+                <img 
+                  src={avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
+                  alt={title} 
+                  className="w-16 h-16 rounded-full object-cover mb-3 border-2 border-[#FF3D71]/40" 
+                  referrerPolicy="no-referrer"
+                />
                 <h4 className="font-bold text-slate-900 text-base">{title}</h4>
                 <p className="text-xs text-slate-500 mt-1 max-w-xs">
-                  {activeConversation.isGroup 
+                  {effectiveActiveConv.isGroup 
                     ? 'Start the group discussion by saying hi to everyone!' 
                     : `You are connected with ${title}. Send a message, voice note, or photo.`}
                 </p>
               </div>
             ) : (
               currentMessages.map(msg => {
-                const isMe = msg.senderId === currentUser.id;
-                const sender = activeConversation.participants.find(p => p.id === msg.senderId) || otherUser;
+                const isMe = msg.senderId === currentUser?.id;
+                const sender = activeResolvedParticipants.find(p => p.id === msg.senderId) || users.find(u => u.id === msg.senderId) || otherUser;
                 const isAudio = msg.mediaType === 'audio';
 
                 return (
@@ -377,11 +489,11 @@ export const FullMessenger: React.FC = () => {
                     key={msg.id}
                     className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}
                   >
-                    <div className="flex items-end gap-2 max-w-[80%] sm:max-w-[70%]">
+                    <div className="flex items-end gap-2 max-w-[85%] sm:max-w-[75%]">
                       {!isMe && (
                         <img
                           src={sender?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                          alt={sender?.name}
+                          alt={sender?.name || 'User'}
                           onClick={() => sender && setSelectedProfileUser(sender)}
                           className="w-8 h-8 rounded-full object-cover border border-slate-200 cursor-pointer flex-shrink-0"
                           referrerPolicy="no-referrer"
@@ -390,7 +502,7 @@ export const FullMessenger: React.FC = () => {
 
                       <div className="space-y-1">
                         {/* Group Sender Name */}
-                        {activeConversation.isGroup && !isMe && (
+                        {effectiveActiveConv.isGroup && !isMe && (
                           <span className="text-[10px] font-semibold text-slate-500 pl-1">
                             {sender?.name}
                           </span>
@@ -460,9 +572,9 @@ export const FullMessenger: React.FC = () => {
                       <span>{msg.createdAt}</span>
                       {!isMe && (
                         <div className="flex items-center gap-1">
-                          <button onClick={() => reactToMessage(activeConversation.id, msg.id, '❤️')} className="hover:scale-125 transition-transform cursor-pointer">❤️</button>
-                          <button onClick={() => reactToMessage(activeConversation.id, msg.id, '👍')} className="hover:scale-125 transition-transform cursor-pointer">👍</button>
-                          <button onClick={() => reactToMessage(activeConversation.id, msg.id, '🔥')} className="hover:scale-125 transition-transform cursor-pointer">🔥</button>
+                          <button onClick={() => reactToMessage(effectiveActiveConv.id, msg.id, '❤️')} className="hover:scale-125 transition-transform cursor-pointer">❤️</button>
+                          <button onClick={() => reactToMessage(effectiveActiveConv.id, msg.id, '👍')} className="hover:scale-125 transition-transform cursor-pointer">👍</button>
+                          <button onClick={() => reactToMessage(effectiveActiveConv.id, msg.id, '🔥')} className="hover:scale-125 transition-transform cursor-pointer">🔥</button>
                         </div>
                       )}
                     </div>
@@ -472,7 +584,7 @@ export const FullMessenger: React.FC = () => {
             )}
 
             {/* Typing Indicator */}
-            {activeConversation.typingUsers && activeConversation.typingUsers.length > 0 && (
+            {effectiveActiveConv.typingUsers && effectiveActiveConv.typingUsers.length > 0 && (
               <div className="flex items-center gap-2 text-slate-400 text-xs pl-2">
                 <div className="flex gap-1">
                   <span className="w-2 h-2 bg-[#FF3D71] rounded-full animate-bounce" />
@@ -486,15 +598,39 @@ export const FullMessenger: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Emoji Picker Popover */}
+          {showEmojiPicker && (
+            <div className="p-2 bg-white border-t border-slate-200 animate-in fade-in flex items-center justify-between">
+              <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                {['❤️', '👍', '🔥', '😂', '😍', '🎉', '🚀', '👏', '🥳', '🙌', '✨', '💯', '🙏', '😊', '😎'].map(em => (
+                  <button
+                    key={em}
+                    type="button"
+                    onClick={() => {
+                      setInputVal(prev => prev + em);
+                      setShowEmojiPicker(false);
+                      inputRef.current?.focus();
+                    }}
+                    className="text-lg p-1 hover:scale-125 transition-transform cursor-pointer"
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setShowEmojiPicker(false)} className="text-slate-400 hover:text-slate-700 text-xs px-2 cursor-pointer">✕</button>
+            </div>
+          )}
+
           {/* Image Picker Box */}
           {showImagePicker && (
             <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2 animate-in fade-in">
               <input
                 type="url"
-                placeholder="Image URL (https://...)"
+                placeholder="Paste image URL (https://...)"
                 value={imageUrl}
                 onChange={(e) => setImageUrl(e.target.value)}
                 className="flex-1 px-3 py-1.5 bg-[#F7F9FC] border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-[#FF3D71]"
+                autoFocus
               />
               <button
                 onClick={() => setShowImagePicker(false)}
@@ -534,7 +670,22 @@ export const FullMessenger: React.FC = () => {
             <form onSubmit={handleSendMessage} className="p-2.5 sm:p-4 bg-white border-t border-slate-200 flex items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
-                onClick={() => setShowImagePicker(!showImagePicker)}
+                onClick={() => {
+                  setShowEmojiPicker(!showEmojiPicker);
+                  setShowImagePicker(false);
+                }}
+                className="p-2 rounded-xl text-slate-400 hover:text-amber-500 hover:bg-[#F7F9FC] transition-colors cursor-pointer flex-shrink-0"
+                title="Add Emoji"
+              >
+                <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImagePicker(!showImagePicker);
+                  setShowEmojiPicker(false);
+                }}
                 className="p-2 rounded-xl text-slate-400 hover:text-[#00D68F] hover:bg-[#F7F9FC] transition-colors cursor-pointer flex-shrink-0"
                 title="Add Image"
               >
@@ -551,6 +702,8 @@ export const FullMessenger: React.FC = () => {
               </button>
 
               <input
+                ref={inputRef}
+                id="input-messenger-text"
                 type="text"
                 placeholder="Type a message..."
                 value={inputVal}
@@ -559,6 +712,7 @@ export const FullMessenger: React.FC = () => {
               />
 
               <button
+                id="btn-send-message"
                 type="submit"
                 disabled={!inputVal.trim() && !imageUrl}
                 className="p-2 sm:p-2.5 bg-[#FF3D71] hover:bg-[#e03161] disabled:opacity-30 text-white rounded-xl sm:rounded-2xl transition-all shadow-md shadow-[#FF3D71]/20 cursor-pointer flex-shrink-0"
@@ -570,13 +724,27 @@ export const FullMessenger: React.FC = () => {
 
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-slate-400">
-          Select a chat to start messaging
+        /* Empty selection placeholder on desktop */
+        <div className="flex-1 hidden md:flex flex-col items-center justify-center text-center p-8 bg-[#F7F9FC] text-slate-400">
+          <div className="w-16 h-16 rounded-3xl bg-white border border-slate-200 flex items-center justify-center mb-3 shadow-xs">
+            <MessageSquare className="w-8 h-8 text-[#FF3D71]" />
+          </div>
+          <h3 className="font-bold text-slate-800 text-base">Select a conversation</h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-xs">
+            Choose a friend from the left sidebar or start a new chat to begin messaging.
+          </p>
+          <button
+            onClick={() => setIsNewChatModalOpen(true)}
+            className="mt-4 px-4 py-2 bg-[#FF3D71] hover:bg-[#e03161] text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Direct Message</span>
+          </button>
         </div>
       )}
 
       {/* Right Details Panel (Collapsible) */}
-      {showRightPanel && activeConversation && (
+      {showRightPanel && effectiveActiveConv && (
         <div className="w-72 border-l border-slate-200 bg-white hidden xl:flex flex-col p-4 space-y-4 overflow-y-auto">
           <div className="text-center py-4 border-b border-slate-200">
             <img
@@ -600,15 +768,15 @@ export const FullMessenger: React.FC = () => {
           </div>
 
           {/* Group members list if group */}
-          {activeConversation.isGroup && (
+          {effectiveActiveConv.isGroup && (
             <div>
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
-                Participants ({activeConversation.participants.length})
+                Participants ({activeResolvedParticipants.length})
               </span>
               <div className="space-y-1.5">
-                {activeConversation.participants.map(member => (
+                {activeResolvedParticipants.map(member => (
                   <div key={member.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#F7F9FC]">
-                    <img src={member.avatar} alt={member.name} className="w-7 h-7 rounded-full object-cover border border-slate-200" />
+                    <img src={member.avatar} alt={member.name} className="w-7 h-7 rounded-full object-cover border border-slate-200" referrerPolicy="no-referrer" />
                     <span className="text-xs text-slate-700 font-medium truncate">{member.name}</span>
                   </div>
                 ))}
@@ -643,7 +811,7 @@ export const FullMessenger: React.FC = () => {
               Delete this entire conversation secretly from your feed only.
             </p>
             <button
-              onClick={() => setSecretDeleteTargetConv(activeConversation)}
+              onClick={() => setSecretDeleteTargetConv(effectiveActiveConv)}
               className="w-full py-2 px-3 bg-white hover:bg-red-600 text-red-600 hover:text-white border border-red-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -740,7 +908,7 @@ export const FullMessenger: React.FC = () => {
 
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
               {users
-                .filter(u => u.id !== currentUser.id)
+                .filter(u => currentUser && u.id !== currentUser.id)
                 .filter(u => {
                   if (!userPickerSearch.trim()) return true;
                   const q = userPickerSearch.toLowerCase().trim();
@@ -836,7 +1004,7 @@ export const FullMessenger: React.FC = () => {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2">Add Participants</label>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {users.filter(u => u.id !== currentUser.id).map(user => {
+                  {users.filter(u => currentUser && u.id !== currentUser.id).map(user => {
                     const isChecked = selectedGroupMembers.includes(user.id);
                     return (
                       <div
@@ -900,3 +1068,4 @@ export const FullMessenger: React.FC = () => {
     </div>
   );
 };
+
